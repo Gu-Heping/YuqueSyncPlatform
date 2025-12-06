@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getRepoDocs, getDocDetail } from '../api';
-import { ChevronRight, ChevronDown, FileText, Folder, Menu, X } from 'lucide-react';
+import { getRepoDocs, getDocDetail, getMembers, getRepos } from '../api';
+import { ChevronRight, ChevronDown, FileText, Folder, Menu, X, Loader2, ExternalLink, List, AlignRight, Pin, PinOff } from 'lucide-react';
 import DOMPurify from 'dompurify';
 import 'github-markdown-css/github-markdown.css';
 import AISummary from '../components/AISummary';
@@ -25,20 +25,20 @@ const TreeNode = ({ node, onSelect, selectedSlug, level = 0 }) => {
   return (
     <div className="select-none">
       <div
-        className={`flex items-center py-1 px-2 cursor-pointer hover:bg-gray-100 rounded ${
-          isSelected ? 'bg-blue-50 text-blue-600' : 'text-gray-700'
+        className={`flex items-center py-1.5 px-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors ${
+          isSelected ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'
         }`}
         style={{ paddingLeft: `${level * 12 + 8}px` }}
         onClick={handleClick}
       >
-        <span className="mr-1 text-gray-400">
+        <span className="mr-1 text-gray-400 dark:text-gray-500">
           {hasChildren ? (
             expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />
           ) : (
             <span className="w-[14px] inline-block" />
           )}
         </span>
-        <span className="mr-2 text-gray-500">
+        <span className="mr-2 text-gray-500 dark:text-gray-400">
           {node.type === 'TITLE' ? <Folder size={14} /> : <FileText size={14} />}
         </span>
         <span className="truncate text-sm">{node.title}</span>
@@ -60,6 +60,34 @@ const TreeNode = ({ node, onSelect, selectedSlug, level = 0 }) => {
   );
 };
 
+const TableOfContents = ({ toc, activeId, onSelect }) => {
+  if (!toc || toc.length === 0) return null;
+
+  return (
+    <div className="h-full overflow-y-auto">
+      <ul className="space-y-1 text-sm">
+        {toc.map((item) => (
+          <li 
+            key={item.id}
+            className={`
+              pl-2 border-l-2 transition-colors cursor-pointer py-1
+              ${activeId === item.id 
+                ? 'border-blue-500 text-blue-600 dark:text-blue-400 font-medium bg-blue-50 dark:bg-blue-900/20' 
+                : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:border-gray-300'}
+            `}
+            style={{ marginLeft: `${(item.level - 1) * 12}px` }}
+            onClick={() => onSelect(item.id)}
+          >
+            <a href={`#${item.id}`} onClick={(e) => e.preventDefault()} className="block truncate">
+              {item.text}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+};
+
 const RepoDetail = () => {
   const { repoId, docSlug } = useParams();
   const navigate = useNavigate();
@@ -69,6 +97,44 @@ const RepoDetail = () => {
   const [loading, setLoading] = useState(true);
   const [contentLoading, setContentLoading] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [members, setMembers] = useState([]);
+  const [repoInfo, setRepoInfo] = useState(null);
+  
+  // Sidebar Pin State
+  const [leftPinned, setLeftPinned] = useState(true);
+  const [rightPinned, setRightPinned] = useState(true);
+  const [leftHovered, setLeftHovered] = useState(false);
+  const [rightHovered, setRightHovered] = useState(false);
+
+  // TOC State
+  const [toc, setToc] = useState([]);
+  const [activeId, setActiveId] = useState('');
+  const [isTocOpen, setIsTocOpen] = useState(false);
+
+  useEffect(() => {
+    const fetchRepoInfo = async () => {
+      try {
+        const response = await getRepos();
+        const currentRepo = response.data.find(r => r.yuque_id.toString() === repoId);
+        setRepoInfo(currentRepo);
+      } catch (error) {
+        console.error('Failed to fetch repo info:', error);
+      }
+    };
+    fetchRepoInfo();
+  }, [repoId]);
+
+  useEffect(() => {
+    const fetchMembers = async () => {
+      try {
+        const response = await getMembers();
+        setMembers(response.data);
+      } catch (error) {
+        console.error('Failed to fetch members:', error);
+      }
+    };
+    fetchMembers();
+  }, []);
 
   useEffect(() => {
     const fetchDocs = async () => {
@@ -98,6 +164,59 @@ const RepoDetail = () => {
       }
     }
   }, [docSlug, flatDocs]);
+
+  // Parse TOC from content
+  useEffect(() => {
+    if (!selectedDoc) return;
+    
+    // Wait for DOM to update
+    const timer = setTimeout(() => {
+      const content = document.querySelector('.markdown-body');
+      if (!content) return;
+      
+      const headers = content.querySelectorAll('h1, h2, h3');
+      const tocData = Array.from(headers).map((header, index) => {
+        const id = header.id || `heading-${index}`;
+        header.id = id; // Ensure ID exists
+        return {
+          id,
+          text: header.innerText,
+          level: parseInt(header.tagName.substring(1)),
+        };
+      });
+      setToc(tocData);
+    }, 100);
+
+    return () => clearTimeout(timer);
+  }, [selectedDoc]);
+
+  // Scroll Spy
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            setActiveId(entry.target.id);
+          }
+        });
+      },
+      { rootMargin: '0px 0px -80% 0px' }
+    );
+
+    const headers = document.querySelectorAll('.markdown-body h1, .markdown-body h2, .markdown-body h3');
+    headers.forEach((header) => observer.observe(header));
+
+    return () => observer.disconnect();
+  }, [toc]);
+
+  const scrollToHeading = (id) => {
+    const element = document.getElementById(id);
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth' });
+      setActiveId(id);
+      setIsTocOpen(false); // Close mobile TOC if open
+    }
+  };
 
   const fetchDocDetail = async (slug) => {
     setContentLoading(true);
@@ -133,29 +252,17 @@ const RepoDetail = () => {
     // Simple sort by prev_uuid (Linked List Sort)
     const sortNodes = (nodes) => {
       if (!nodes || nodes.length === 0) return [];
-      
-      // Map prev_uuid -> node
-      const prevMap = {};
-      const firstNodes = [];
-      
-      nodes.forEach(node => {
-        if (node.prev_uuid) {
-          prevMap[node.prev_uuid] = node;
-        }
-      });
-
-      // Find nodes that are not anyone's next sibling (or have no prev_uuid in this list)
-      // Actually, simpler: find the one with prev_uuid that is NOT in the current list of uuids?
-      // Or just find the one with prev_uuid == null (if it's the absolute first).
-      // But prev_uuid might point to a node outside this list (if filtered).
-      // Let's just sort by 'prev_uuid' existence for now or leave unsorted.
-      // A robust sort is complex without guaranteed integrity.
-      // Fallback: Sort by id or creation time if needed.
       return nodes; 
     };
 
     return roots;
   };
+
+  const authorName = useMemo(() => {
+    if (!selectedDoc || !members.length) return '未知作者';
+    const member = members.find(m => m.yuque_id === selectedDoc.user_id);
+    return member ? member.name : '未知作者';
+  }, [selectedDoc, members]);
 
   const handleSelectDoc = (node) => {
     if (node.slug === selectedDoc?.slug) return;
@@ -163,10 +270,14 @@ const RepoDetail = () => {
     setIsSidebarOpen(false);
   };
 
-  if (loading) return <div className="text-center py-10">加载目录中...</div>;
+  if (loading) return (
+    <div className="flex justify-center items-center h-[calc(100vh-8rem)]">
+      <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+    </div>
+  );
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] bg-white rounded-lg shadow overflow-hidden relative">
+    <div className="flex h-[calc(100vh-8rem)] bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden relative border border-gray-200 dark:border-gray-700">
       {/* Mobile Sidebar Overlay */}
       {isSidebarOpen && (
         <div 
@@ -175,18 +286,25 @@ const RepoDetail = () => {
         />
       )}
 
-      {/* Sidebar */}
+      {/* Mobile TOC Overlay */}
+      {isTocOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-40 xl:hidden"
+          onClick={() => setIsTocOpen(false)}
+        />
+      )}
+
+      {/* Mobile Sidebar (Doc Tree) */}
       <div className={`
-        fixed inset-y-0 left-0 z-50 w-80 bg-gray-50 border-r border-gray-200 transform transition-transform duration-300 ease-in-out
-        md:relative md:translate-x-0 md:z-0
+        fixed inset-y-0 left-0 z-50 w-80 bg-gray-50 dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 transform transition-transform duration-300 ease-in-out md:hidden
         ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
         <div className="h-full overflow-y-auto p-4">
           <div className="flex items-center justify-between mb-4 px-2">
-            <h3 className="font-bold text-gray-700">文档目录</h3>
+            <h3 className="font-bold text-gray-700 dark:text-gray-200">文档目录</h3>
             <button 
               onClick={() => setIsSidebarOpen(false)}
-              className="md:hidden p-1 text-gray-500 hover:bg-gray-200 rounded"
+              className="p-1 text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
             >
               <X size={20} />
             </button>
@@ -202,45 +320,215 @@ const RepoDetail = () => {
         </div>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto p-4 md:p-8 w-full">
-        {/* Mobile Menu Button */}
-        <div className="md:hidden mb-4">
-          <button
-            onClick={() => setIsSidebarOpen(true)}
-            className="flex items-center text-gray-600 hover:text-blue-600"
-          >
-            <Menu size={24} className="mr-2" />
-            <span className="font-medium">目录</span>
-          </button>
+      {/* Desktop Left Sidebar */}
+      <div 
+        className={`hidden md:block relative z-20 transition-all duration-300 ${leftPinned ? 'w-80' : 'w-8'}`}
+        onMouseEnter={() => setLeftHovered(true)}
+        onMouseLeave={() => setLeftHovered(false)}
+      >
+        <div className={`
+          h-full bg-gray-50 dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700
+          transition-transform duration-300 ease-in-out
+          absolute top-0 left-0 w-80 shadow-xl
+          ${leftPinned ? 'translate-x-0' : (leftHovered ? 'translate-x-0' : '-translate-x-[calc(100%-2rem)]')}
+        `}>
+          <div className="h-full flex flex-col">
+            <div className="flex items-center justify-between px-2 border-b border-gray-200 dark:border-gray-700 shrink-0 h-14">
+              <h3 className={`font-bold text-gray-700 dark:text-gray-200 transition-opacity duration-200 ${!leftPinned && !leftHovered ? 'opacity-0' : 'opacity-100'}`}>
+                文档目录
+              </h3>
+              <button 
+                onClick={() => setLeftPinned(!leftPinned)}
+                className="p-1 text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
+                title={leftPinned ? "取消固定" : "固定侧边栏"}
+              >
+                {leftPinned ? <PinOff size={16} /> : <Pin size={16} className="fill-current" />}
+              </button>
+            </div>
+            <div className={`flex-1 overflow-y-auto p-4 transition-opacity duration-200 ${!leftPinned && !leftHovered ? 'opacity-0' : 'opacity-100'}`}>
+              {treeData.map((node) => (
+                <TreeNode
+                  key={node.uuid}
+                  node={node}
+                  onSelect={handleSelectDoc}
+                  selectedSlug={selectedDoc?.slug}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Content Area Wrapper */}
+      <div className="flex-1 flex min-w-0 bg-white dark:bg-gray-800 relative">
+        
+        {/* Article Content (Scrollable) */}
+        <div className="flex-1 overflow-y-auto p-4 md:p-8 scroll-smooth" id="article-scroll-container">
+          {/* Mobile Menu Button */}
+          <div className="md:hidden mb-4 flex justify-between items-center">
+            <button
+              onClick={() => setIsSidebarOpen(true)}
+              className="flex items-center text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400"
+            >
+              <Menu size={24} className="mr-2" />
+              <span className="font-medium">目录</span>
+            </button>
+            {toc.length > 0 && (
+              <button
+                onClick={() => setIsTocOpen(true)}
+                className="flex items-center text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400"
+              >
+                <List size={24} />
+              </button>
+            )}
+          </div>
+
+          {contentLoading ? (
+            <div className="flex justify-center items-center h-64">
+              <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+            </div>
+          ) : selectedDoc ? (
+            <div className="max-w-3xl mx-auto">
+              <div className="flex items-center justify-between mb-6">
+                <h1 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white">{selectedDoc.title}</h1>
+              </div>
+              
+              {/* AI Summary Component */}
+              <AISummary docId={selectedDoc.id} content={selectedDoc.body || selectedDoc.body_html} />
+
+              <div className="flex flex-wrap items-center text-sm text-gray-500 dark:text-gray-400 mb-8 pb-4 border-b border-gray-200 dark:border-gray-700 gap-y-2">
+                <span className="mr-4">作者: {authorName}</span>
+                <span className="mr-4">
+                  更新: {selectedDoc.content_updated_at || selectedDoc.updated_at 
+                    ? new Date(selectedDoc.content_updated_at || selectedDoc.updated_at).toLocaleDateString() 
+                    : '未知'}
+                </span>
+                <span className="mr-4">字数: {selectedDoc.word_count}</span>
+                <span className="mr-4">阅读: {selectedDoc.read_count || 0}</span>
+                <span>点赞: {selectedDoc.likes_count || 0}</span>
+              </div>
+              
+              <div 
+                className="markdown-body dark:bg-gray-800 dark:text-gray-200"
+                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(selectedDoc.body_html) }} 
+              />
+              
+              {repoInfo && (
+                <div className="mt-8 pt-4 border-t border-gray-200 dark:border-gray-700">
+                  <a 
+                    href={`https://nova.yuque.com/${repoInfo.namespace}/${selectedDoc.slug}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 dark:text-blue-400 hover:underline flex items-center w-fit"
+                  >
+                    <ExternalLink className="w-4 h-4 mr-1" />
+                    查看原文
+                  </a>
+                </div>
+              )}
+
+              {/* Add custom styles for dark mode markdown if github-markdown-css doesn't support it automatically via class */}
+              <style>{`
+                .dark .markdown-body {
+                  color-scheme: dark;
+                  color: #c9d1d9;
+                  background-color: #1f2937; /* gray-800 */
+                }
+                .dark .markdown-body a {
+                  color: #58a6ff;
+                }
+                .dark .markdown-body pre {
+                  background-color: #161b22;
+                }
+                .dark .markdown-body blockquote {
+                  color: #8b949e;
+                  border-left-color: #30363d;
+                }
+                .dark .markdown-body table tr {
+                  background-color: #1f2937;
+                  border-top-color: #30363d;
+                }
+                .dark .markdown-body table tr:nth-child(2n) {
+                  background-color: #161b22;
+                }
+                .dark .markdown-body table th,
+                .dark .markdown-body table td {
+                  border-color: #30363d;
+                }
+              `}</style>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center h-full text-gray-400 dark:text-gray-600">
+              <FileText size={48} className="mb-4 opacity-20" />
+              <p>请从左侧选择文档阅读</p>
+            </div>
+          )}
         </div>
 
-        {contentLoading ? (
-          <div className="text-center text-gray-500 mt-20">加载文档内容...</div>
-        ) : selectedDoc ? (
-          <div className="max-w-4xl mx-auto">
-            <div className="flex items-center justify-between mb-6">
-              <h1 className="text-2xl md:text-3xl font-bold text-gray-900">{selectedDoc.title}</h1>
+        {/* Desktop TOC (Right Sidebar) */}
+        {selectedDoc && toc.length > 0 && (
+          <div 
+            className={`hidden xl:block relative z-20 transition-all duration-300 ${rightPinned ? 'w-64' : 'w-8'}`}
+            onMouseEnter={() => setRightHovered(true)}
+            onMouseLeave={() => setRightHovered(false)}
+          >
+            <div className={`
+              h-full bg-gray-50/50 dark:bg-gray-900/50 border-l border-gray-200 dark:border-gray-700
+              transition-transform duration-300 ease-in-out
+              absolute top-0 right-0 w-64 shadow-xl
+              ${rightPinned ? 'translate-x-0' : (rightHovered ? 'translate-x-0' : 'translate-x-[calc(100%-2rem)]')}
+            `}>
+              <div className="h-full flex flex-col">
+                <div className="flex items-center justify-between px-2 shrink-0 h-14">
+                  <button 
+                    onClick={() => setRightPinned(!rightPinned)}
+                    className="p-1 text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
+                    title={rightPinned ? "取消固定" : "固定侧边栏"}
+                  >
+                    {rightPinned ? <PinOff size={16} /> : <Pin size={16} className="fill-current" />}
+                  </button>
+                  <span className={`font-bold text-gray-700 dark:text-gray-200 transition-opacity duration-200 ${!rightPinned && !rightHovered ? 'opacity-0' : 'opacity-100'}`}>
+                    本文目录
+                  </span>
+                </div>
+                <div className={`flex-1 overflow-y-auto p-4 pt-0 transition-opacity duration-200 ${!rightPinned && !rightHovered ? 'opacity-0' : 'opacity-100'}`}>
+                  <TableOfContents toc={toc} activeId={activeId} onSelect={scrollToHeading} />
+                </div>
+              </div>
             </div>
-            
-            {/* AI Summary Component */}
-            <AISummary docId={selectedDoc.id} content={selectedDoc.body || selectedDoc.body_html} />
-
-            <div className="flex items-center text-sm text-gray-500 mb-8 pb-4 border-b border-gray-200">
-              <span className="mr-4">最后更新: {new Date(selectedDoc.updated_at).toLocaleDateString()}</span>
-              <span>字数: {selectedDoc.word_count}</span>
-            </div>
-            <div 
-              className="markdown-body"
-              dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(selectedDoc.body_html) }} 
-            />
-          </div>
-        ) : (
-          <div className="flex flex-col items-center justify-center h-full text-gray-400">
-            <FileText size={48} className="mb-4 opacity-20" />
-            <p>请从左侧选择文档阅读</p>
           </div>
         )}
+
+        {/* Mobile TOC Drawer (Right Slide-in) */}
+        <div className={`
+          fixed inset-y-0 right-0 z-50 w-72 bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 transform transition-transform duration-300 ease-in-out xl:hidden
+          ${isTocOpen ? 'translate-x-0' : 'translate-x-full'}
+        `}>
+          <div className="h-full overflow-y-auto p-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-gray-700 dark:text-gray-200">内容大纲</h3>
+              <button 
+                onClick={() => setIsTocOpen(false)}
+                className="p-1 text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <TableOfContents toc={toc} activeId={activeId} onSelect={scrollToHeading} />
+          </div>
+        </div>
+
+        {/* Mobile Floating TOC Button (Bottom Right) */}
+        {selectedDoc && toc.length > 0 && !isTocOpen && (
+          <button
+            onClick={() => setIsTocOpen(true)}
+            className="fixed bottom-24 right-6 z-40 p-3 bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 rounded-full shadow-lg border border-gray-200 dark:border-gray-700 xl:hidden hover:bg-gray-50 dark:hover:bg-gray-700 transition-all"
+            aria-label="Toggle Table of Contents"
+          >
+            <List size={20} />
+          </button>
+        )}
+
       </div>
     </div>
   );
