@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - yuque-network
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    expose:
+      - "8000"
+    environment:
+      - MONGO_URI=mongodb://mongo:27017
+      - MONGO_DB_NAME=yuque_db
+      - QDRANT_URL=http://qdrant:6333
+      - QDRANT_COLLECTION_NAME=yuque_docs
+      # 请确保在 .env 文件中设置了以下敏感信息，或在此处直接替换
+      - YUQUE_TOKEN=${YUQUE_TOKEN}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL}
+    env_file:
+      - .env
+    depends_on:
+      - mongo
+      - qdrant
+    networks:
+      - yuque-network
+
+  mongo:
+    image: mongo:6.0
+    restart: always
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - yuque-network
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    restart: always
+    volumes:
+      - qdrant_data:/qdrant/storage
+    networks:
+      - yuque-network
+
+networks:
+  yuque-network:
+    driver: bridge
+
+volumes:
+  mongo_data:
+  qdrant_data:
