@@ -28,7 +28,7 @@ const AISummary = ({ docId, content }) => {
     return (
       <button
         onClick={handleGenerateSummary}
-        className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-full transition-colors border border-indigo-200"
+        className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 rounded-full transition-colors border border-indigo-200 dark:border-indigo-700"
       >
         <Sparkles className="w-4 h-4" />
         AI 总结
@@ -37,31 +37,31 @@ const AISummary = ({ docId, content }) => {
   }
 
   return (
-    <div className="mb-6 rounded-xl border border-indigo-100 bg-gradient-to-br from-indigo-50/50 to-white shadow-sm overflow-hidden">
+    <div className="mb-6 rounded-xl border border-indigo-100 dark:border-indigo-900/50 bg-gradient-to-br from-indigo-50/50 to-white dark:from-gray-800 dark:to-gray-800 shadow-sm overflow-hidden">
       <div 
-        className="flex items-center justify-between px-4 py-3 bg-indigo-50/30 cursor-pointer select-none"
+        className="flex items-center justify-between px-4 py-3 bg-indigo-50/30 dark:bg-indigo-900/20 cursor-pointer select-none"
         onClick={() => setExpanded(!expanded)}
       >
-        <div className="flex items-center gap-2 text-indigo-700 font-medium">
+        <div className="flex items-center gap-2 text-indigo-700 dark:text-indigo-300 font-medium">
           <Sparkles className="w-4 h-4" />
           <span>AI 智能摘要</span>
         </div>
-        <button className="text-indigo-400 hover:text-indigo-600">
+        <button className="text-indigo-400 dark:text-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-300">
           {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
         </button>
       </div>
       
       {expanded && (
-        <div className="px-4 py-3 text-sm text-gray-700 leading-relaxed border-t border-indigo-50">
+        <div className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300 leading-relaxed border-t border-indigo-50 dark:border-indigo-900/30">
           {loading ? (
-            <div className="flex items-center gap-3 py-2 text-indigo-500">
+            <div className="flex items-center gap-3 py-2 text-indigo-500 dark:text-indigo-400">
               <Loader2 className="w-5 h-5 animate-spin" />
               <span>正在分析文档内容...</span>
             </div>
           ) : error ? (
-            <div className="text-red-500 py-2">{error}</div>
+            <div className="text-red-500 dark:text-red-400 py-2">{error}</div>
           ) : (
-            <div className="prose prose-sm max-w-none prose-indigo">
+            <div className="prose prose-sm max-w-none prose-indigo dark:prose-invert">
               <ReactMarkdown>{summary}</ReactMarkdown>
             </div>
           )}
