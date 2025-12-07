@@ -190,7 +190,17 @@ const RepoDetail = () => {
       if (!content) return;
       
       const headers = content.querySelectorAll('h1, h2, h3, h4, h5, h6');
-      const tocData = Array.from(headers).map((header, index) => {
+      const tocData = Array.from(headers)
+        .filter(header => {
+          // Ignore headers inside details tags unless they are in the summary
+          const inDetails = header.closest('details');
+          const inSummary = header.closest('summary');
+          if (inDetails && !inSummary) return false;
+          
+          // Ignore empty headers
+          return header.innerText.trim().length > 0;
+        })
+        .map((header, index) => {
         const id = header.id || `heading-${index}`;
         header.id = id; // Ensure ID exists
         return {
