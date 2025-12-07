@@ -1,4 +1,5 @@
 import os
+import re
 import asyncio
 # 强制禁用本地连接的代理，防止 502 Bad Gateway
 os.environ["NO_PROXY"] = "localhost,127.0.0.1"
@@ -117,10 +118,56 @@ class RAGService:
         except Exception as e:
             logger.error(f"Failed to upsert doc {doc.yuque_id} to vector db: {e}")
 
+    def _highlight_text(self, text: str, query: str, window_size: int = 200) -> str:
+        """
+        简单的关键词高亮和摘要提取
+        """
+        if not text:
+            return ""
+            
+        # 1. 提取关键词 (简单按空格分词)
+        keywords = [k for k in query.split() if k.strip()]
+        if not keywords:
+            return text[:window_size] + "..."
+
+        # 2. 找到第一个关键词的位置
+        lower_text = text.lower()
+        first_pos = -1
+        for k in keywords:
+            pos = lower_text.find(k.lower())
+            if pos != -1:
+                if first_pos == -1 or pos < first_pos:
+                    first_pos = pos
+        
+        # 3. 截取窗口
+        if first_pos == -1:
+            start = 0
+        else:
+            start = max(0, first_pos - 20) # 往前多取一点上下文
+        
+        end = min(len(text), start + window_size)
+        snippet = text[start:end]
+        
+        # 4. 高亮关键词 (使用正则忽略大小写替换)
+        for k in keywords:
+            # 使用 re.escape 防止关键词包含正则特殊字符
+            pattern = re.compile(re.escape(k), re.IGNORECASE)
+            snippet = pattern.sub(lambda m: f"<mark>{m.group(0)}</mark>", snippet)
+            
+        if start > 0:
+            snippet = "..." + snippet
+        if end < len(text):
+            snippet = snippet + "..."
+            
+        return snippet
+
     async def search(self, query: str, limit: int = 20, repo_id: Optional[int] = None):
         """
         混合检索 (Hybrid Search): Keyword (MongoDB) + Vector (Qdrant) + RRF Fusion
         """
+        # 为了提高 RRF 融合的效果，内部召回更多的候选文档 (例如 2 倍 limit)
+        candidate_limit = max(limit * 2, 50)
+
         # 1. 定义两路搜索函数
         async def keyword_search():
             try:
@@ -129,8 +176,8 @@ class RAGService:
                 if repo_id:
                     find_query["repo_id"] = repo_id
                 
-                # 获取 Top 20 结果
-                return await Doc.find(find_query).limit(limit).to_list()
+                # 获取候选结果
+                return await Doc.find(find_query).limit(candidate_limit).to_list()
             except Exception as e:
                 logger.warning(f"Keyword search failed (possibly no index): {e}")
                 return []
@@ -141,7 +188,7 @@ class RAGService:
                 # filter_dict = {"repo_id": repo_id} if repo_id else {}
                 
                 # 使用异步向量搜索
-                return await self.vector_store.asimilarity_search_with_score(query, k=limit)
+                return await self.vector_store.asimilarity_search_with_score(query, k=candidate_limit)
             except Exception as e:
                 logger.error(f"Vector search failed: {e}")
                 return []
@@ -159,14 +206,24 @@ class RAGService:
         for rank, doc in enumerate(keyword_results):
             if not doc.yuque_id: continue
             
+            # 提取纯文本用于生成摘要
+            text_content = doc.description or ""
+            if not text_content and doc.body:
+                try:
+                    # 尝试去除 HTML 标签 (针对 Lake/HTML 格式)
+                    soup = BeautifulSoup(doc.body, "html.parser")
+                    text_content = soup.get_text(separator=" ")
+                except:
+                    text_content = doc.body
+
             doc_id = doc.yuque_id
             if doc_id not in fused_scores:
                 fused_scores[doc_id] = 0
                 doc_info_map[doc_id] = {
                     "title": doc.title,
                     "slug": doc.slug,
-                    # 简单截取作为摘要
-                    "content": doc.body[:300] + "..." if doc.body else "",
+                    # 使用高亮摘要
+                    "content": self._highlight_text(text_content, query),
                     "updated_date": doc.updated_at.strftime("%Y-%m-%d") if doc.updated_at else "",
                     "author_name": "未知作者", # MongoDB Doc 中没有直接存储作者名
                     "source_type": "keyword"
@@ -186,7 +243,8 @@ class RAGService:
                 doc_info_map[doc_id] = {
                     "title": doc.metadata.get("title"),
                     "slug": doc.metadata.get("slug"),
-                    "content": doc.page_content, # 向量检索的片段通常更好
+                    # 对向量检索的片段也进行高亮
+                    "content": self._highlight_text(doc.page_content, query),
                     "updated_date": doc.metadata.get("updated_date"),
                     "author_name": doc.metadata.get("author_name"),
                     "source_type": "vector"
@@ -198,7 +256,7 @@ class RAGService:
                 if current_info["source_type"] == "keyword":
                      doc_info_map[doc_id].update({
                         "author_name": doc.metadata.get("author_name"),
-                        "content": doc.page_content,
+                        "content": self._highlight_text(doc.page_content, query),
                         "source_type": "hybrid"
                      })
 

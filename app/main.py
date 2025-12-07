@@ -32,7 +32,10 @@ app = FastAPI(
     title="Yuque Sync Platform",
     description="语雀知识库同步与检索平台 API",
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
+    docs_url="/api/docs",
+    redoc_url="/api/redoc",
+    openapi_url="/api/openapi.json"
 )
 
 # 注册路由

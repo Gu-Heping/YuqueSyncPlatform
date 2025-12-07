@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, Outlet } from 'react-router-dom';
-import { Book, Users, Home, Search, Sun, Moon } from 'lucide-react';
+import { Book, Users, Home, Search, Sun, Moon, Github } from 'lucide-react';
 import SearchModal from './SearchModal';
 import { useTheme } from '../hooks/useTheme';
 
@@ -66,6 +66,16 @@ const Layout = () => {
               >
                 {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
               </button>
+
+              <a
+                href="https://github.com/Gu-Heping/YuqueSyncPlatform"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="p-2 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
+                title="GitHub Repository"
+              >
+                <Github className="w-5 h-5" />
+              </a>
             </div>
           </div>
         </div>

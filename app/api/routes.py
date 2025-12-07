@@ -100,7 +100,7 @@ async def search_docs(q: str = Query(..., min_length=1)):
 # --- AI / RAG Endpoints ---
 
 @router.post("/search", summary="语义搜索")
-async def search_docs_semantic(query: str = Body(..., embed=True), limit: int = 5, repo_id: Optional[int] = None):
+async def search_docs_semantic(query: str = Body(..., embed=True), limit: int = 20, repo_id: Optional[int] = None):
     """
     基于向量的语义搜索
     """

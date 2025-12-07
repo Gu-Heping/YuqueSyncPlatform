@@ -107,15 +107,81 @@ OPENAI_BASE_URL=https://api.openai.com/v1
 
 ---
 
-## 🐳 部署建议
+## 🐳 全栈部署 (Docker Compose)
 
-推荐使用 Docker Compose 进行全栈部署。
+本项目提供了开箱即用的 Docker Compose 配置，支持一键部署完整环境（前端 + 后端 + 数据库）。
 
-### 架构示意
-`Nginx (Gateway)` -> `/api/*` -> `FastAPI Container`
-`Nginx (Gateway)` -> `/*` -> `React Static Files`
+### 1. 配置环境变量
+在服务器项目根目录创建 `.env` 文件，填入必要的 API Key 和 Token：
 
-详细部署配置请参考项目文档中的 `docker-compose.prod.yml`。
+```bash
+# 复制示例配置
+cp .env.example .env
+
+# 编辑 .env 文件
+vim .env
+```
+确保填入以下关键信息：
+- `YUQUE_TOKEN`: 您的语雀 Token
+- `OPENAI_API_KEY`: OpenAI API Key (用于 RAG)
+
+### 2. 启动服务
+使用 `docker-compose.prod.yml` 启动生产环境：
+
+```bash
+docker-compose -f docker-compose.prod.yml up -d --build
+```
+
+该命令会自动：
+1. 构建前端 React 应用 (Build Stage) 并打包进 Nginx 容器。
+2. 构建后端 FastAPI 应用容器。
+3. 启动 MongoDB 和 Qdrant 数据库容器。
+4. 自动配置 Nginx 反向代理 (前端端口 80 -> 后端端口 8000)。
+
+### 3. 验证部署
+- **前端访问**: `http://your-server-ip`
+- **API 文档**: `http://your-server-ip/api/docs` (注意 Nginx 配置了 `/api` 前缀转发)
+
+### 4. 常用运维命令
+```bash
+# 查看日志
+docker-compose -f docker-compose.prod.yml logs -f
+
+# 停止服务
+docker-compose -f docker-compose.prod.yml down
+
+# 更新代码后重新部署
+git pull
+docker-compose -f docker-compose.prod.yml up -d --build
+```
+
+---
+
+## ❓ 常见问题 (FAQ)
+
+### Q: Docker 构建失败，提示 `failed to fetch anonymous token` 或 `dial tcp ... timeout`?
+这是由于网络无法连接到 Docker Hub。请配置 Docker 镜像加速器。
+
+**解决方案 (Docker Desktop):**
+1. 打开 Docker Desktop 设置 -> **Docker Engine**。
+2. 修改配置 JSON，添加 `registry-mirrors`：
+   ```json
+   {
+     "builder": {
+       "gc": {
+         "defaultKeepStorage": "20GB",
+         "enabled": true
+       }
+     },
+     "experimental": false,
+     "registry-mirrors": [
+       "https://docker.m.daocloud.io",
+       "https://huecker.io",
+       "https://mirror.ccs.tencentyun.com"
+     ]
+   }
+   ```
+3. 点击 **Apply & restart** 重启 Docker。
 
 ---
 

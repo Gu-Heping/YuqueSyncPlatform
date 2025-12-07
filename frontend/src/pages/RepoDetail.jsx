@@ -5,6 +5,7 @@ import { ChevronRight, ChevronDown, FileText, Folder, Menu, X, Loader2, External
 import DOMPurify from 'dompurify';
 import 'github-markdown-css/github-markdown.css';
 import AISummary from '../components/AISummary';
+import MemberModal from '../components/MemberModal';
 
 const TreeNode = ({ node, onSelect, selectedSlug, level = 0 }) => {
   const [expanded, setExpanded] = useState(false);
@@ -98,6 +99,7 @@ const RepoDetail = () => {
   const [contentLoading, setContentLoading] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [members, setMembers] = useState([]);
+  const [selectedMember, setSelectedMember] = useState(null);
   const [repoInfo, setRepoInfo] = useState(null);
   
   // Sidebar Pin State
@@ -258,10 +260,9 @@ const RepoDetail = () => {
     return roots;
   };
 
-  const authorName = useMemo(() => {
-    if (!selectedDoc || !members.length) return '未知作者';
-    const member = members.find(m => m.yuque_id === selectedDoc.user_id);
-    return member ? member.name : '未知作者';
+  const author = useMemo(() => {
+    if (!selectedDoc || !members.length) return null;
+    return members.find(m => m.yuque_id === selectedDoc.user_id);
   }, [selectedDoc, members]);
 
   const handleSelectDoc = (node) => {
@@ -393,19 +394,30 @@ const RepoDetail = () => {
                 <h1 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white">{selectedDoc.title}</h1>
               </div>
               
-              {/* AI Summary Component */}
-              <AISummary docId={selectedDoc.id} content={selectedDoc.body || selectedDoc.body_html} />
-
               <div className="flex flex-wrap items-center text-sm text-gray-500 dark:text-gray-400 mb-8 pb-4 border-b border-gray-200 dark:border-gray-700 gap-y-2">
-                <span className="mr-4">作者: {authorName}</span>
+                <span className="mr-4 flex items-center">
+                  作者: 
+                  <button 
+                    onClick={() => author && setSelectedMember(author)}
+                    className={`ml-1 font-medium ${author ? 'text-blue-600 dark:text-blue-400 hover:underline cursor-pointer' : ''}`}
+                    disabled={!author}
+                  >
+                    {author ? author.name : '未知作者'}
+                  </button>
+                </span>
                 <span className="mr-4">
                   更新: {selectedDoc.content_updated_at || selectedDoc.updated_at 
-                    ? new Date(selectedDoc.content_updated_at || selectedDoc.updated_at).toLocaleDateString() 
+                    ? new Date(selectedDoc.content_updated_at || selectedDoc.updated_at).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) 
                     : '未知'}
                 </span>
                 <span className="mr-4">字数: {selectedDoc.word_count}</span>
                 <span className="mr-4">阅读: {selectedDoc.read_count || 0}</span>
                 <span>点赞: {selectedDoc.likes_count || 0}</span>
+              </div>
+
+              {/* AI Summary Component */}
+              <div className="mb-6">
+                <AISummary docId={selectedDoc.id} content={selectedDoc.body || selectedDoc.body_html} />
               </div>
               
               <div 
@@ -530,6 +542,14 @@ const RepoDetail = () => {
         )}
 
       </div>
+
+      {/* Member Modal */}
+      {selectedMember && (
+        <MemberModal 
+          member={selectedMember} 
+          onClose={() => setSelectedMember(null)} 
+        />
+      )}
     </div>
   );
 };

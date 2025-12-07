@@ -3,12 +3,17 @@ FROM node:18-alpine as builder
 
 WORKDIR /app
 
-# 复制依赖文件 (注意路径，因为构建上下文是项目根目录)
-COPY frontend/package*.json ./
+# 设置 npm 镜像加速
+RUN npm config set registry https://registry.npmmirror.com
+
+# 复制所有源码 (包括可能存在的 node_modules)
+COPY frontend/ .
+
+# 强制清理并重新安装依赖 (确保是 Linux 版本的二进制文件)
+RUN rm -rf node_modules package-lock.json
 RUN npm install
 
-# 复制源码并构建
-COPY frontend/ .
+# 构建
 RUN npm run build
 
 # Stage 2: Run

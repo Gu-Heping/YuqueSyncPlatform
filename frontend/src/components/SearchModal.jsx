@@ -89,9 +89,10 @@ const SearchModal = ({ isOpen, onClose }) => {
                     <h4 className="font-medium text-gray-800 dark:text-gray-200 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
                       {doc.title}
                     </h4>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 line-clamp-2 mt-1">
-                      {doc.content || doc.description || "暂无预览"}
-                    </p>
+                    <p 
+                      className="text-sm text-gray-500 dark:text-gray-400 line-clamp-2 mt-1"
+                      dangerouslySetInnerHTML={{ __html: doc.content || doc.description || "暂无预览" }}
+                    />
                   </div>
                 </div>
               ))}
