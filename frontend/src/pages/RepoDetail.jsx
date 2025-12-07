@@ -6,6 +6,7 @@ import DOMPurify from 'dompurify';
 import 'github-markdown-css/github-markdown.css';
 import AISummary from '../components/AISummary';
 import MemberModal from '../components/MemberModal';
+import { formatDate } from '../utils/date';
 
 const TreeNode = ({ node, onSelect, selectedSlug, level = 0 }) => {
   const [expanded, setExpanded] = useState(false);
@@ -406,9 +407,7 @@ const RepoDetail = () => {
                   </button>
                 </span>
                 <span className="mr-4">
-                  更新: {selectedDoc.content_updated_at || selectedDoc.updated_at 
-                    ? new Date(selectedDoc.content_updated_at || selectedDoc.updated_at).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) 
-                    : '未知'}
+                  更新: {formatDate(selectedDoc.content_updated_at || selectedDoc.updated_at, { hour: '2-digit', minute: '2-digit' })}
                 </span>
                 <span className="mr-4">字数: {selectedDoc.word_count}</span>
                 <span className="mr-4">阅读: {selectedDoc.read_count || 0}</span>

@@ -18,6 +18,7 @@ from langchain_core.messages import HumanMessage, AIMessage
 
 from app.core.config import settings
 from app.models.schemas import Doc, ChatSession, ChatMessage, Member, User
+from beanie.operators import In
 
 logger = logging.getLogger(__name__)
 
@@ -292,13 +293,14 @@ class RAGService:
         """
         Conversational RAG Pipeline:
         1. Contextualize Query (History-Aware)
-        2. Retrieval with Metadata
+        2. Retrieval with Metadata (Parent Document Retrieval)
         3. Answer Generation
         4. Memory Persistence
         """
         # 0. 获取/创建会话
         if not session_id:
-            session = ChatSession(title=query[:20])
+            # Create new session
+            session = ChatSession(title=query[:50])
             await session.insert()
             session_id = str(session.id)
         
@@ -333,28 +335,61 @@ just reformulate it if needed and otherwise return it as is."""
             })
             logger.info(f"Contextualized query: {final_query}")
 
-        # Step 2: Retrieval with Metadata (携带元数据的检索)
-        # 使用改写后的 query 进行检索
-        docs = await self.search(final_query, limit=5, repo_id=repo_id)
-        
-        def format_docs(docs):
-            formatted = []
-            for d in docs:
-                meta = d
-                # 尝试获取更多元数据，这里假设 search 返回的 dict 已经包含了 metadata
-                title = meta.get("title", "未知文档")
-                author = meta.get("author_name", meta.get("user_id", "未知作者"))
-                date = meta.get("updated_date", "未知日期")
-                content = meta.get("content", "")
-                
-                formatted.append(f"<Document>\nTitle: {title}\nAuthor: {author}\nDate: {date}\nContent: {content}\n</Document>")
-            return "\n\n".join(formatted)
+        # Step 2: Retrieval (Parent Document Retrieval)
+        # 2.1 Vector Search to get candidate chunks
+        try:
+            # Use async vector search
+            vector_results = await self.vector_store.asimilarity_search_with_score(final_query, k=10)
+        except Exception as e:
+            logger.error(f"Vector search failed in chat: {e}")
+            vector_results = []
 
-        context_text = format_docs(docs)
+        # 2.2 Deduplication & ID Extraction
+        top_doc_ids = []
+        seen_ids = set()
+        for doc, score in vector_results:
+            # metadata uses 'doc_id' which is yuque_id
+            d_id = doc.metadata.get("doc_id")
+            if d_id and d_id not in seen_ids:
+                top_doc_ids.append(d_id)
+                seen_ids.add(d_id)
+            if len(top_doc_ids) >= 3:
+                break
+        
+        # 2.3 Full Content Fetching
+        docs = []
+        if top_doc_ids:
+            docs = await Doc.find(In(Doc.yuque_id, top_doc_ids)).to_list()
+        
+        # Sort docs to match the order of top_doc_ids (relevance)
+        docs_map = {d.yuque_id: d for d in docs}
+        ordered_docs = []
+        for d_id in top_doc_ids:
+            if d_id in docs_map:
+                ordered_docs.append(docs_map[d_id])
+
+        # 2.4 Context Construction
+        context_parts = []
+        for d in ordered_docs:
+            # Truncate body to 8000 chars to avoid token limit issues
+            body = d.body or ""
+            if len(body) > 8000:
+                body = body[:8000] + "\n...(truncated due to length)..."
+            
+            # Try to get author name if possible, otherwise use ID
+            author_info = f"{d.user_id} (ID)"
+            
+            part = f"=== Document: {d.title} ===\nAuthor: {author_info}\nUpdate: {d.updated_at}\nContent:\n{body}\n========================="
+            context_parts.append(part)
+        
+        context_text = "\n\n".join(context_parts)
+        if not context_text:
+            context_text = "No relevant documents found."
 
         # Step 3: Answer Generation (生成回答)
-        qa_system_prompt = """你是一位专业的团队技术顾问。请基于以下检索到的上下文（Context），回答用户的问题。
-请在回答中尽可能引用文档的作者和最后更新时间，以增加可信度。
+        qa_system_prompt = """你是一位专业的团队技术顾问。请基于以下检索到的完整文档上下文（Context），回答用户的问题。
+这些文档是根据相关性检索到的完整内容，请仔细阅读。
+请在回答中尽可能引用文档的标题、作者和最后更新时间，以增加可信度。
 如果上下文中没有答案，请诚实地说不知道，不要编造。
 回答请使用 Markdown 格式，条理清晰。
 
@@ -374,25 +409,23 @@ just reformulate it if needed and otherwise return it as is."""
         answer = await rag_chain.ainvoke({
             "context": context_text,
             "chat_history": chat_history,
-            "input": final_query # 使用改写后的 query 还是原始 query? 通常 RAG 生成阶段使用原始 query 配合 history，或者改写后的。
-            # 这里使用 final_query 更稳妥，因为它包含了完整语义。但如果 prompt 里有 chat_history，也可以用原始 query。
-            # 鉴于我们已经改写了 query 用于检索，生成阶段为了保持一致性，且 prompt 包含 history，我们可以用原始 query 让 LLM 看到用户的真实输入，
-            # 或者用 final_query。标准做法是：检索用 standalone query，生成用 original query + history + context。
-            # 但为了简化，且 final_query 已经包含了 history 的语义，我们可以只传 final_query 或者 original query。
-            # 让我们传 original query，因为 prompt 里有 chat_history placeholder。
+            "input": final_query 
         })
         
         # Step 4: Memory Persistence (记忆存储)
         # 保存用户提问
         await ChatMessage(session_id=session_id, role="user", content=query).insert()
         
-        # 构造 Sources
+        # 构造 Sources (Simple metadata for UI)
         sources = []
-        for d in docs:
-            s = d.copy()
-            s.pop('content', None)
-            s.pop('score', None)
-            sources.append(s)
+        for d in ordered_docs:
+            sources.append({
+                "title": d.title,
+                "slug": d.slug,
+                "yuque_id": d.yuque_id,
+                "author_id": d.user_id,
+                "updated_at": d.updated_at
+            })
 
         # 保存 AI 回答
         await ChatMessage(session_id=session_id, role="ai", content=answer, sources=sources).insert()

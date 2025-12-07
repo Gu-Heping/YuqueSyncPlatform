@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getRepos } from '../api';
 import { Book, Loader2 } from 'lucide-react';
+import { formatDate } from '../utils/date';
 
 const RepoList = () => {
   const [repos, setRepos] = useState([]);
@@ -51,7 +52,7 @@ const RepoList = () => {
                 {repo.items_count} 篇文档
               </span>
               <span className="text-xs">
-                更新于 {new Date(repo.content_updated_at || repo.updated_at).toLocaleDateString()}
+                更新于 {formatDate(repo.content_updated_at || repo.updated_at)}
               </span>
             </div>
           </Link>

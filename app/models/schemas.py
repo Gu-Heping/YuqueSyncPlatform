@@ -207,6 +207,7 @@ class WebhookCommentable(BaseModel):
 class WebhookData(BaseModel):
     action_type: str
     id: int
+    user_id: Optional[int] = None # 文档作者 ID
     
     # Common / Doc fields
     slug: Optional[str] = None
@@ -215,7 +216,14 @@ class WebhookData(BaseModel):
     body_html: Optional[str] = None
     book: Optional[WebhookBook] = None 
     user: Optional[WebhookUser] = None 
+    actor: Optional[WebhookUser] = None # 操作者 (通常是文档作者/更新者)
     
+    # Stats
+    word_count: int = 0
+    likes_count: int = 0
+    read_count: int = 0
+    comments_count: int = 0
+
     # Comment fields
     commentable: Optional[WebhookCommentable] = None 
     

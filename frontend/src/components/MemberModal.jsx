@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { getMemberDocs } from '../api';
 import { FileText, X, Loader2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { formatDate } from '../utils/date';
 
 const MemberModal = ({ member, onClose }) => {
   const [docs, setDocs] = useState([]);
@@ -81,9 +82,7 @@ const MemberModal = ({ member, onClose }) => {
                         {doc.title}
                       </span>
                       <span className="text-xs text-gray-400 dark:text-gray-500 block mt-0.5">
-                        {doc.content_updated_at || doc.updated_at 
-                          ? new Date(doc.content_updated_at || doc.updated_at).toLocaleDateString() 
-                          : '未知时间'} 更新
+                        {formatDate(doc.content_updated_at || doc.updated_at)} 更新
                       </span>
                     </div>
                   </Link>
