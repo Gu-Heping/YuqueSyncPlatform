@@ -131,6 +131,28 @@ class RAGService:
         except Exception as e:
             logger.error(f"Failed to upsert doc {doc.yuque_id} to vector db: {e}")
 
+    async def delete_doc(self, doc_id: int):
+        """
+        从向量库中删除指定文档的所有切片
+        """
+        try:
+            self.client.delete(
+                collection_name=self.collection_name,
+                points_selector=models.FilterSelector(
+                    filter=models.Filter(
+                        must=[
+                            models.FieldCondition(
+                                key="metadata.doc_id",
+                                match=models.MatchValue(value=doc_id),
+                            ),
+                        ],
+                    )
+                ),
+            )
+            logger.info(f"Deleted vectors for doc_id: {doc_id}")
+        except Exception as e:
+            logger.error(f"Failed to delete vectors for doc_id {doc_id}: {e}")
+
     def _highlight_text(self, text: str, query: str, window_size: int = 200) -> str:
         """
         简单的关键词高亮和摘要提取

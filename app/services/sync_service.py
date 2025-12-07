@@ -130,7 +130,7 @@ class SyncService:
 
     async def sync_repo(self, repo_data: Dict):
         """
-        同步单个知识库：Upsert Repo -> Fetch TOC -> Merge Details -> Upsert Docs
+        同步单个知识库：Upsert Repo -> Fetch TOC -> Merge Details -> Upsert Docs -> Prune Deleted Docs
         """
         try:
             # 1. Upsert Repo
@@ -143,11 +143,43 @@ class SyncService:
 
             # 3. Process Docs (Concurrency controlled)
             tasks = []
+            active_uuids = []
             for item in toc_list:
                 tasks.append(self._process_toc_item(repo.yuque_id, item))
+                if item.get('uuid'):
+                    active_uuids.append(item['uuid'])
             
             # 并发执行所有文档同步任务
             await asyncio.gather(*tasks)
+
+            # 4. Pruning: 删除本地存在但远程已删除的文档
+            if active_uuids:
+                # 查找需要删除的文档
+                docs_to_delete = await Doc.find(
+                    Doc.repo_id == repo.yuque_id,
+                    {"uuid": {"$nin": active_uuids}}
+                ).to_list()
+
+                if docs_to_delete:
+                    logger.info(f"发现 {len(docs_to_delete)} 个过期文档，准备清理...")
+                    for doc in docs_to_delete:
+                        # 1. 从向量库删除
+                        if doc.yuque_id:
+                            await self.rag_service.delete_doc(doc.yuque_id)
+                        
+                        # 2. 从 MongoDB 删除
+                        await doc.delete()
+                        logger.info(f"已删除文档: {doc.title} (UUID: {doc.uuid})")
+            else:
+                # 如果 TOC 为空，说明知识库被清空了，删除该库下所有文档
+                docs_to_delete = await Doc.find(Doc.repo_id == repo.yuque_id).to_list()
+                if docs_to_delete:
+                    logger.info(f"知识库为空，清理所有文档: {len(docs_to_delete)} 个")
+                    for doc in docs_to_delete:
+                        if doc.yuque_id:
+                            await self.rag_service.delete_doc(doc.yuque_id)
+                        await doc.delete()
+
             logger.info(f"  - 知识库 {repo.name} 同步完毕")
 
         except Exception as e:
@@ -167,6 +199,7 @@ class SyncService:
             active_uuids = [item['uuid'] for item in toc_list]
             
             # 2. 并行更新结构
+            logger.info(f"正在更新 {len(toc_list)} 个文档的结构信息...")
             tasks = []
             for item in toc_list:
                 tasks.append(self._update_toc_structure(repo_id, item))
@@ -176,19 +209,30 @@ class SyncService:
             # 3. Pruning: 删除过期文档
             # 删除条件: repo_id 匹配 且 uuid 不在 active_uuids 中
             if active_uuids:
-                # 使用原生 MongoDB 查询语法 $nin
-                delete_result = await Doc.find(
+                docs_to_delete = await Doc.find(
                     Doc.repo_id == repo_id,
                     {"uuid": {"$nin": active_uuids}}
-                ).delete()
+                ).to_list()
                 
-                if delete_result and delete_result.deleted_count > 0:
-                    logger.info(f"清理过期文档: {delete_result.deleted_count} 个 (Repo ID: {repo_id})")
+                if docs_to_delete:
+                    logger.info(f"发现 {len(docs_to_delete)} 个过期文档，准备清理...")
+                    for doc in docs_to_delete:
+                        # 1. 从向量库删除
+                        if doc.yuque_id:
+                            await self.rag_service.delete_doc(doc.yuque_id)
+                        
+                        # 2. 从 MongoDB 删除
+                        await doc.delete()
+                        logger.info(f"已删除文档: {doc.title} (UUID: {doc.uuid})")
             else:
                 # 如果 TOC 为空，说明知识库被清空了，删除该库下所有文档
-                delete_result = await Doc.find(Doc.repo_id == repo_id).delete()
-                if delete_result and delete_result.deleted_count > 0:
-                    logger.info(f"知识库为空，清理所有文档: {delete_result.deleted_count} 个 (Repo ID: {repo_id})")
+                docs_to_delete = await Doc.find(Doc.repo_id == repo_id).to_list()
+                if docs_to_delete:
+                    logger.info(f"知识库为空，清理所有文档: {len(docs_to_delete)} 个 (Repo ID: {repo_id})")
+                    for doc in docs_to_delete:
+                        if doc.yuque_id:
+                            await self.rag_service.delete_doc(doc.yuque_id)
+                        await doc.delete()
 
             logger.info(f"知识库结构同步完成 (Repo ID: {repo_id})")
         except Exception as e:
@@ -201,16 +245,17 @@ class SyncService:
         async with self.semaphore:
             try:
                 # 构造更新数据 (仅结构相关)
+                # 使用 or None 确保空字符串被转换为 None，保持与 _process_toc_item 一致
                 update_data = {
                     "uuid": toc_item['uuid'],
                     "repo_id": repo_id,
                     "title": toc_item['title'],
                     "type": toc_item['type'],
                     "slug": toc_item.get('url') or toc_item['uuid'],
-                    "parent_uuid": toc_item.get('parent_uuid'),
-                    "prev_uuid": toc_item.get('prev_uuid'),
-                    "sibling_uuid": toc_item.get('sibling_uuid'),
-                    "child_uuid": toc_item.get('child_uuid'),
+                    "parent_uuid": toc_item.get('parent_uuid') or None,
+                    "prev_uuid": toc_item.get('prev_uuid') or None,
+                    "sibling_uuid": toc_item.get('sibling_uuid') or None,
+                    "child_uuid": toc_item.get('child_uuid') or None,
                     "depth": toc_item.get('depth', 0),
                     "updated_at": self._parse_time(toc_item.get('updated_at')), # 优先使用 API 返回的时间
                     "last_synced_at": datetime.utcnow() # 记录本次同步时间
@@ -222,6 +267,8 @@ class SyncService:
                     update_data["yuque_id"] = raw_id
                 elif isinstance(raw_id, str) and raw_id.isdigit():
                     update_data["yuque_id"] = int(raw_id)
+                else:
+                    update_data["yuque_id"] = None
 
                 # Upsert: 如果存在则更新结构，不存在则插入 (此时 body 为空)
                 doc_obj = Doc(**update_data)

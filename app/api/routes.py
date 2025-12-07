@@ -45,6 +45,26 @@ async def trigger_member_sync(background_tasks: BackgroundTasks, group_id: Optio
     background_tasks.add_task(run_member_sync_task, group_id)
     return {"message": "成员同步任务已在后台启动"}
 
+async def run_structure_sync_task(repo_id: int):
+    """后台结构同步任务包装器"""
+    service = SyncService()
+    try:
+        await service.sync_repo_structure(repo_id)
+    except Exception as e:
+        print(f"Structure sync failed: {e}")
+    finally:
+        await service.client.close()
+
+@router.post("/sync/repos/{repo_id}/structure", summary="触发知识库结构同步(含清理)")
+async def trigger_structure_sync(repo_id: int, background_tasks: BackgroundTasks):
+    """
+    触发后台知识库结构同步任务。
+    该任务会拉取最新的 TOC 目录结构，并自动清理本地存在但远程已删除的文档（包括向量库数据）。
+    适用于快速修复文档结构或清理脏数据。
+    """
+    background_tasks.add_task(run_structure_sync_task, repo_id)
+    return {"message": f"知识库 {repo_id} 结构同步任务已在后台启动"}
+
 @router.get("/repos", response_model=List[Repo], summary="获取知识库列表")
 async def get_repos():
     """
