@@ -189,7 +189,7 @@ const RepoDetail = () => {
       const content = document.querySelector('.markdown-body');
       if (!content) return;
       
-      const headers = content.querySelectorAll('h1, h2, h3');
+      const headers = content.querySelectorAll('h1, h2, h3, h4, h5, h6');
       const tocData = Array.from(headers).map((header, index) => {
         const id = header.id || `heading-${index}`;
         header.id = id; // Ensure ID exists
@@ -218,7 +218,7 @@ const RepoDetail = () => {
       { rootMargin: '0px 0px -80% 0px' }
     );
 
-    const headers = document.querySelectorAll('.markdown-body h1, .markdown-body h2, .markdown-body h3');
+    const headers = document.querySelectorAll('.markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4, .markdown-body h5, .markdown-body h6');
     headers.forEach((header) => observer.observe(header));
 
     return () => observer.disconnect();
