@@ -7,7 +7,7 @@ os.environ["NO_PROXY"] = "localhost,127.0.0.1"
 import logging
 from typing import List, Optional
 from bs4 import BeautifulSoup
-from qdrant_client import QdrantClient
+from qdrant_client import QdrantClient, models
 from langchain_qdrant import QdrantVectorStore
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -46,6 +46,18 @@ class RAGService:
         self.client = QdrantClient(url=settings.QDRANT_URL)
         self.collection_name = settings.QDRANT_COLLECTION_NAME
         
+        # 检查并创建集合 (如果不存在)
+        if not self.client.collection_exists(self.collection_name):
+            print(f"Collection '{self.collection_name}' does not exist. Creating it...")
+            self.client.create_collection(
+                collection_name=self.collection_name,
+                vectors_config=models.VectorParams(
+                    size=1536,  # text-embedding-3-small 的维度
+                    distance=models.Distance.COSINE
+                )
+            )
+            print(f"Collection '{self.collection_name}' created successfully.")
+
         # 使用 LangChain 的 VectorStore 抽象
         self.vector_store = QdrantVectorStore(
             client=self.client,
