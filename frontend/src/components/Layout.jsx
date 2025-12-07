@@ -1,12 +1,17 @@
-import React, { useState, useEffect } from 'react';
-import { Link, Outlet } from 'react-router-dom';
-import { Book, Users, Home, Search, Sun, Moon, Github } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Link, Outlet, useNavigate } from 'react-router-dom';
+import { Book, Users, Home, Search, Sun, Moon, Github, LogIn, LogOut, User } from 'lucide-react';
 import SearchModal from './SearchModal';
 import { useTheme } from '../hooks/useTheme';
+import { useAuth } from '../context/AuthContext';
 
 const Layout = () => {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const { theme, toggleTheme } = useTheme();
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+  const userMenuRef = useRef(null);
 
   // Cmd+K / Ctrl+K shortcut
   useEffect(() => {
@@ -19,6 +24,23 @@ const Layout = () => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
+
+  // Close user menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target)) {
+        setIsUserMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleLogout = () => {
+    logout();
+    setIsUserMenuOpen(false);
+    navigate('/login');
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col transition-colors duration-200">
@@ -66,6 +88,56 @@ const Layout = () => {
               >
                 {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
               </button>
+
+              {user ? (
+                <div className="relative" ref={userMenuRef}>
+                  <button
+                    onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+                    className="flex items-center max-w-xs bg-white dark:bg-gray-800 rounded-full focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  >
+                    <img
+                      className="h-8 w-8 rounded-full object-cover"
+                      src={user.avatar_url}
+                      alt={user.name}
+                    />
+                  </button>
+                  {isUserMenuOpen && (
+                    <div className="origin-top-right absolute right-0 mt-2 w-48 rounded-md shadow-lg py-1 bg-white dark:bg-gray-800 ring-1 ring-black ring-opacity-5 focus:outline-none z-50">
+                      <div className="px-4 py-2 border-b border-gray-100 dark:border-gray-700">
+                        <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{user.name}</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 truncate">@{user.login}</p>
+                      </div>
+                      <Link
+                        to="/profile"
+                        className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                        onClick={() => setIsUserMenuOpen(false)}
+                      >
+                        <div className="flex items-center">
+                          <User className="w-4 h-4 mr-2" />
+                          个人中心
+                        </div>
+                      </Link>
+                      <button
+                        onClick={handleLogout}
+                        className="block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                      >
+                        <div className="flex items-center">
+                          <LogOut className="w-4 h-4 mr-2" />
+                          退出登录
+                        </div>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <Link
+                  to="/login"
+                  className="p-2 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
+                  title="Login"
+                >
+                  <LogIn className="w-5 h-5" />
+                </Link>
+              )}
 
               <a
                 href="https://github.com/Gu-Heping/YuqueSyncPlatform"

@@ -1,57 +1,98 @@
 import React, { useEffect, useState } from 'react';
-import { getMembers } from '../api';
-import { Search, User } from 'lucide-react';
+import { getMembers, followMember, unfollowMember } from '../api';
+import { Search, User, UserPlus, UserMinus } from 'lucide-react';
 import MemberModal from '../components/MemberModal';
+import { useAuth } from '../context/AuthContext';
 
-const MemberCard = ({ member, onClick }) => {
+const MemberCard = ({ member, currentUser, onFollowToggle, onClick }) => {
+  const isFollowing = member.followers && currentUser && member.followers.includes(currentUser.yuque_id);
+  const isSelf = currentUser && currentUser.yuque_id === member.yuque_id;
+
   return (
     <div 
-      className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-all cursor-pointer group"
-      onClick={() => onClick(member)}
+      className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-all group relative"
     >
-      <div className="p-6 flex items-center space-x-4">
-        <img
-          src={member.avatar_url || 'https://gw.alipayobjects.com/zos/rmsportal/BiazfanxmamNRoxxVxka.png'}
-          alt={member.name}
-          className="w-12 h-12 rounded-full object-cover border border-gray-200 dark:border-gray-600 group-hover:border-blue-200 dark:group-hover:border-blue-800 transition-colors"
-        />
-        <div className="flex-1 min-w-0">
-          <h3 className="text-lg font-medium text-gray-900 dark:text-white truncate group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-            {member.name}
-          </h3>
-          <p className="text-sm text-gray-500 dark:text-gray-400 truncate">@{member.login}</p>
-        </div>
+      <div className="absolute top-4 right-4 z-10">
+         {!isSelf && currentUser && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onFollowToggle(member, isFollowing);
+              }}
+              className={`p-2 rounded-full transition-colors ${
+                isFollowing 
+                  ? 'bg-red-100 text-red-600 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400' 
+                  : 'bg-blue-100 text-blue-600 hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-400'
+              }`}
+              title={isFollowing ? "取消关注" : "关注"}
+            >
+              {isFollowing ? <UserMinus size={16} /> : <UserPlus size={16} />}
+            </button>
+         )}
       </div>
-      <div className="px-6 pb-4">
-        <p className="text-sm text-gray-600 dark:text-gray-300 line-clamp-2 h-10">
-          {member.description || '暂无简介'}
-        </p>
+      <div className="cursor-pointer" onClick={() => onClick(member)}>
+        <div className="p-6 flex items-center space-x-4">
+          <img
+            src={member.avatar_url || 'https://gw.alipayobjects.com/zos/rmsportal/BiazfanxmamNRoxxVxka.png'}
+            alt={member.name}
+            className="w-12 h-12 rounded-full object-cover border border-gray-200 dark:border-gray-600 group-hover:border-blue-200 dark:group-hover:border-blue-800 transition-colors"
+          />
+          <div className="flex-1 min-w-0">
+            <h3 className="text-lg font-medium text-gray-900 dark:text-white truncate group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+              {member.name}
+            </h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 truncate">@{member.login}</p>
+          </div>
+        </div>
+        <div className="px-6 pb-4">
+          <p className="text-sm text-gray-600 dark:text-gray-300 line-clamp-2 h-10">
+            {member.description || '暂无简介'}
+          </p>
+        </div>
       </div>
     </div>
   );
 };
 
 const Members = () => {
+  const { user } = useAuth();
   const [members, setMembers] = useState([]);
   const [filteredMembers, setFilteredMembers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedMember, setSelectedMember] = useState(null);
 
+  const fetchMembers = async () => {
+    try {
+      const response = await getMembers();
+      setMembers(response.data);
+      // If we are searching, we should re-filter, but for simplicity we can just update filteredMembers if search is empty
+      // or let the useEffect handle it.
+      // Actually, the useEffect below depends on [searchTerm, members], so updating members will trigger re-filter.
+    } catch (error) {
+      console.error('Failed to fetch members:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchMembers = async () => {
-      try {
-        const response = await getMembers();
-        setMembers(response.data);
-        setFilteredMembers(response.data);
-      } catch (error) {
-        console.error('Failed to fetch members:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchMembers();
   }, []);
+
+  const handleFollowToggle = async (member, isFollowing) => {
+    try {
+      if (isFollowing) {
+        await unfollowMember(member.yuque_id);
+      } else {
+        await followMember(member.yuque_id);
+      }
+      await fetchMembers();
+    } catch (error) {
+      console.error('Failed to toggle follow status:', error);
+      // You might want to show a toast notification here
+    }
+  };
 
   useEffect(() => {
     const lowerTerm = searchTerm.toLowerCase();
@@ -88,6 +129,8 @@ const Members = () => {
           <MemberCard 
             key={member.yuque_id} 
             member={member} 
+            currentUser={user}
+            onFollowToggle={handleFollowToggle}
             onClick={setSelectedMember}
           />
         ))}

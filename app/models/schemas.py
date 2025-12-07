@@ -31,9 +31,11 @@ class Member(Document):
     avatar_url: Optional[str] = None
     description: Optional[str] = None
     email: Optional[str] = None
+    hashed_password: Optional[str] = None
     role: Optional[int] = None # 0: Owner, 1: Admin, 2: Member
     status: Optional[int] = None # 1: Normal, 0: Inactive
     is_active: bool = True # 是否在职
+    followers: List[int] = [] # 关注者的 yuque_id 列表
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
     class Settings:
@@ -208,6 +210,7 @@ class WebhookData(BaseModel):
     action_type: str
     id: int
     user_id: Optional[int] = None # 文档作者 ID
+    actor_id: Optional[int] = None # 操作者 ID
     
     # Common / Doc fields
     slug: Optional[str] = None

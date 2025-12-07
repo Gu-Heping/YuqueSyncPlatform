@@ -15,6 +15,26 @@ class Settings(BaseSettings):
     QDRANT_URL: str = "http://localhost:6333"
     QDRANT_COLLECTION_NAME: str = "yuque_docs"
 
+    # Security
+    SECRET_KEY: str = "your-secret-key-please-change-in-production"
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7 # 7 days
+
+    # Email Configuration
+    MAIL_USERNAME: str = ""
+    MAIL_PASSWORD: str = ""
+    MAIL_FROM: str = "noreply@example.com"
+    MAIL_PORT: int = 587
+    MAIL_SERVER: str = "smtp.gmail.com"
+    MAIL_FROM_NAME: str = "YuqueSync Notification"
+    MAIL_STARTTLS: bool = True
+    MAIL_SSL_TLS: bool = False
+    USE_CREDENTIALS: bool = True
+    VALIDATE_CERTS: bool = True
+
+    # Frontend Configuration
+    FRONTEND_URL: str = "http://localhost"
+
     # 读取 .env 文件
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

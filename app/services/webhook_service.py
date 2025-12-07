@@ -1,8 +1,11 @@
 import logging
 from datetime import datetime
-from app.models.schemas import WebhookPayload, Doc, Comment
+from app.models.schemas import WebhookPayload, Doc, Comment, Member
 from app.services.sync_service import SyncService
+from app.services.email_service import EmailService
+from app.core.config import settings
 from typing import Optional
+from fastapi import BackgroundTasks
 
 logger = logging.getLogger(__name__)
 
@@ -10,14 +13,17 @@ class WebhookService:
     """
     处理语雀 Webhook 事件的服务
     """
-    async def handle_event(self, payload: WebhookPayload):
+    def __init__(self):
+        self.email_service = EmailService()
+
+    async def handle_event(self, payload: WebhookPayload, background_tasks: Optional[BackgroundTasks] = None):
         data = payload.data
         action_type = data.action_type
         
         logger.info(f"Received Webhook Event: {action_type} (ID: {data.id})")
         
         if action_type in ["publish", "update"]:
-            await self._handle_doc_upsert(data)
+            await self._handle_doc_upsert(data, background_tasks)
         elif action_type == "delete":
             await self._handle_doc_delete(data)
         elif action_type in ["comment_create", "comment_update", "comment_reply_create"]:
@@ -25,7 +31,7 @@ class WebhookService:
         else:
             logger.warning(f"Ignored unknown action_type: {action_type}")
 
-    async def _handle_doc_upsert(self, data):
+    async def _handle_doc_upsert(self, data, background_tasks: Optional[BackgroundTasks] = None):
         """处理文档发布/更新事件"""
         if not data.book:
             logger.error("Doc event missing 'book' info")
@@ -35,11 +41,11 @@ class WebhookService:
         # Webhook 中的 actor 通常是文档的作者/最后修改者
         user_id = data.user_id # 直接使用 payload 中的 user_id (对应作者)
         
+        author_member = None
         if data.actor and data.actor.id == user_id:
             try:
-                from app.models.schemas import Member
-                member = await Member.find_one(Member.yuque_id == user_id)
-                if not member:
+                author_member = await Member.find_one(Member.yuque_id == user_id)
+                if not author_member:
                     new_member = Member(
                         yuque_id=data.actor.id,
                         login=data.actor.login,
@@ -49,10 +55,14 @@ class WebhookService:
                         status=1, # 默认
                         updated_at=datetime.utcnow()
                     )
-                    await new_member.insert()
+                    author_member = await new_member.insert()
                     logger.info(f"Auto-synced new member from webhook actor: {data.actor.name} ({user_id})")
             except Exception as e:
                 logger.error(f"Failed to sync actor {user_id}: {e}")
+        
+        # 如果上面没找到或没同步，尝试再次查找
+        if not author_member:
+             author_member = await Member.find_one(Member.yuque_id == user_id)
 
         # 尝试查找现有文档
         doc = await Doc.find_one(Doc.yuque_id == data.id)
@@ -91,6 +101,43 @@ class WebhookService:
             new_doc = Doc(**update_dict)
             await new_doc.insert()
             logger.info(f"Doc created (from webhook): {data.title} ({data.id})")
+
+        # 3. 触发邮件通知 (仅当有后台任务且作者存在且有粉丝时)
+        # 仅当操作者是文档作者本人时才发送通知 (防止误报)
+        should_notify = (
+            background_tasks 
+            and author_member 
+            and author_member.followers 
+            and data.user_id == data.actor_id
+        )
+
+        if should_notify:
+            try:
+                # 查找所有粉丝的邮箱
+                followers = await Member.find(
+                    {"yuque_id": {"$in": author_member.followers}, "email": {"$ne": None}}
+                ).to_list()
+                
+                if followers:
+                    to_emails = [f.email for f in followers if f.email]
+                    if to_emails:
+                        # 构造 YuqueSync 平台内部链接
+                        # 格式: {FRONTEND_URL}/repos/{repo_id}/docs/{slug}
+                        base_url = settings.FRONTEND_URL.rstrip('/')
+                        doc_url = f"{base_url}/repos/{data.book.id}/docs/{data.slug}"
+                        
+                        background_tasks.add_task(
+                            self.email_service.send_doc_update_email,
+                            to_emails=to_emails,
+                            doc_title=data.title,
+                            author_name=author_member.name,
+                            doc_url=doc_url
+                        )
+                        logger.info(f"Queued email notification for {len(to_emails)} followers")
+            except Exception as e:
+                logger.error(f"Failed to queue email notification: {e}")
+        elif background_tasks and author_member and author_member.followers:
+             logger.info(f"Skipped email notification: actor_id ({data.actor_id}) != user_id ({data.user_id})")
 
         # 如果是新增文档 (publish)，触发目录结构同步
         if data.action_type == "publish":

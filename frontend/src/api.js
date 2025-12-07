@@ -4,11 +4,29 @@ const api = axios.create({
   baseURL: '/api/v1',
 });
 
+// Add a request interceptor to include the token
+api.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
 export const getRepos = () => api.get('/repos');
 export const getRepoDocs = (repoId) => api.get('/docs', { params: { repo_id: repoId, limit: 10000 } });
 export const getDocDetail = (slug) => api.get(`/docs/${slug}`);
 export const getMembers = () => api.get('/members');
 export const getMemberDocs = (userId) => api.get('/docs', { params: { user_id: userId, limit: 100 } });
+
+// Social Features
+export const followMember = (memberId) => api.post(`/members/${memberId}/follow`);
+export const unfollowMember = (memberId) => api.post(`/members/${memberId}/unfollow`);
 
 // AI Features
 export const searchDocs = (query) => api.post('/search', { query });

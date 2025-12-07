@@ -3,6 +3,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Body
 from typing import List, Optional, Dict, Any
 from app.services.sync_service import SyncService
 from app.services.rag_service import RAGService
+from app.services.email_service import EmailService
 from app.models.schemas import Doc, Repo, Member, DocSummary
 
 router = APIRouter()
@@ -146,3 +147,15 @@ async def ai_explain(text: str = Body(..., embed=True)):
     """
     rag = RAGService()
     return await rag.explain(text)
+
+@router.post("/email/test", summary="发送测试邮件")
+async def send_test_email(to_email: str = Body(..., embed=True)):
+    """
+    向指定邮箱发送测试邮件
+    """
+    email_service = EmailService()
+    try:
+        await email_service.send_test_email(to_email)
+        return {"message": f"测试邮件已发送至 {to_email}"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"发送邮件失败: {str(e)}")
