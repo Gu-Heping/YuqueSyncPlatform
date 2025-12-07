@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getRepoDocs, getDocDetail, getMembers, getRepos } from '../api';
 import { ChevronRight, ChevronDown, FileText, Folder, Menu, X, Loader2, ExternalLink, List, AlignRight, Pin, PinOff } from 'lucide-react';
@@ -7,6 +7,8 @@ import 'github-markdown-css/github-markdown.css';
 import AISummary from '../components/AISummary';
 import MemberModal from '../components/MemberModal';
 import { formatDate } from '../utils/date';
+import hljs from 'highlight.js';
+import 'highlight.js/styles/github-dark.css';
 
 const TreeNode = ({ node, onSelect, selectedSlug, level = 0 }) => {
   const [expanded, setExpanded] = useState(false);
@@ -96,6 +98,16 @@ const RepoDetail = () => {
   const [treeData, setTreeData] = useState([]);
   const [flatDocs, setFlatDocs] = useState([]);
   const [selectedDoc, setSelectedDoc] = useState(null);
+  const markdownRef = useRef(null);
+
+  useEffect(() => {
+    if (selectedDoc && markdownRef.current) {
+      const blocks = markdownRef.current.querySelectorAll('pre code');
+      blocks.forEach((block) => {
+        hljs.highlightElement(block);
+      });
+    }
+  }, [selectedDoc]);
   const [loading, setLoading] = useState(true);
   const [contentLoading, setContentLoading] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -420,6 +432,7 @@ const RepoDetail = () => {
               </div>
               
               <div 
+                ref={markdownRef}
                 className="markdown-body dark:bg-gray-800 dark:text-gray-200"
                 dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(selectedDoc.body_html) }} 
               />
