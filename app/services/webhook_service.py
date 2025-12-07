@@ -46,22 +46,58 @@ class WebhookService:
         finally:
             await client.close()
 
+        # 确保作者信息已同步到本地 Member 表
+        # 如果是新成员，需要将其添加到 Member 表中，否则前端无法显示作者名
+        user_id = detail.get("user_id") or (data.user.id if data.user else None)
+        if user_id:
+            # 检查本地是否存在该成员
+            from app.models.schemas import Member
+            member = await Member.find_one(Member.yuque_id == user_id)
+            if not member:
+                # 如果不存在，尝试从 detail 或 data.user 中构建 Member 对象
+                # 注意：detail 中可能不包含完整的 user 信息，data.user 比较可靠
+                user_info = data.user
+                if user_info:
+                    new_member = Member(
+                        yuque_id=user_info.id,
+                        login=user_info.login,
+                        name=user_info.name,
+                        avatar_url=user_info.avatar_url,
+                        role=0, # 默认为普通成员
+                        status=1, # 默认为正常
+                        updated_at=datetime.utcnow()
+                    )
+                    await new_member.insert()
+                    logger.info(f"Auto-synced new member from webhook: {user_info.name} ({user_info.id})")
+
         # 尝试查找现有文档
         doc = await Doc.find_one(Doc.yuque_id == data.id)
         
         # 准备更新的数据
         # 优先使用 API 详情中的数据 (统计信息等)，如果获取失败则回退到 Webhook 数据
+        # 修复时区问题：Webhook 和 API 返回的时间通常是 ISO8601 (UTC)，需要确保解析正确
+        # Pydantic 模型会自动解析 ISO 字符串为 datetime 对象 (通常是 naive UTC 或带时区的)
+        # 为了统一，我们确保所有时间都转换为 UTC 存储
+        
+        def parse_time(t):
+            if isinstance(t, str):
+                try:
+                    return datetime.fromisoformat(t.replace('Z', '+00:00'))
+                except:
+                    return None
+            return t
+
         update_dict = {
             "title": detail.get("title") or data.title,
             "slug": detail.get("slug") or data.slug,
             "repo_id": data.book.id,
-            "user_id": detail.get("user_id") or (data.user.id if data.user else None),
+            "user_id": user_id,
             "body": detail.get("body") or data.body,
             "body_html": detail.get("body_html") or data.body_html,
-            "updated_at": data.updated_at or datetime.utcnow(),
-            "content_updated_at": data.content_updated_at,
-            "published_at": data.published_at,
-            "first_published_at": data.first_published_at,
+            "updated_at": parse_time(detail.get("updated_at")) or data.updated_at or datetime.utcnow(),
+            "content_updated_at": parse_time(detail.get("content_updated_at")) or data.content_updated_at,
+            "published_at": parse_time(detail.get("published_at")) or data.published_at,
+            "first_published_at": parse_time(detail.get("first_published_at")) or data.first_published_at,
             # 补充统计信息
             "word_count": detail.get("word_count", 0),
             "likes_count": detail.get("likes_count", 0),
