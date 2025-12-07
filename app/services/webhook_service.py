@@ -50,25 +50,28 @@ class WebhookService:
         # 如果是新成员，需要将其添加到 Member 表中，否则前端无法显示作者名
         user_id = detail.get("user_id") or (data.user.id if data.user else None)
         if user_id:
-            # 检查本地是否存在该成员
-            from app.models.schemas import Member
-            member = await Member.find_one(Member.yuque_id == user_id)
-            if not member:
-                # 如果不存在，尝试从 detail 或 data.user 中构建 Member 对象
-                # 注意：detail 中可能不包含完整的 user 信息，data.user 比较可靠
-                user_info = data.user
-                if user_info:
-                    new_member = Member(
-                        yuque_id=user_info.id,
-                        login=user_info.login,
-                        name=user_info.name,
-                        avatar_url=user_info.avatar_url,
-                        role=0, # 默认为普通成员
-                        status=1, # 默认为正常
-                        updated_at=datetime.utcnow()
-                    )
-                    await new_member.insert()
-                    logger.info(f"Auto-synced new member from webhook: {user_info.name} ({user_info.id})")
+            try:
+                # 检查本地是否存在该成员
+                from app.models.schemas import Member
+                member = await Member.find_one(Member.yuque_id == user_id)
+                if not member:
+                    # 如果不存在，尝试从 detail 或 data.user 中构建 Member 对象
+                    # 注意：detail 中可能不包含完整的 user 信息，data.user 比较可靠
+                    user_info = data.user
+                    if user_info:
+                        new_member = Member(
+                            yuque_id=user_info.id,
+                            login=user_info.login,
+                            name=user_info.name,
+                            avatar_url=user_info.avatar_url,
+                            role=0, # 默认为普通成员
+                            status=1, # 默认为正常
+                            updated_at=datetime.utcnow()
+                        )
+                        await new_member.insert()
+                        logger.info(f"Auto-synced new member from webhook: {user_info.name} ({user_info.id})")
+            except Exception as e:
+                logger.error(f"Failed to auto-sync member {user_id}: {e}")
 
         # 尝试查找现有文档
         doc = await Doc.find_one(Doc.yuque_id == data.id)
@@ -82,20 +85,25 @@ class WebhookService:
         def parse_time(t):
             if isinstance(t, str):
                 try:
+                    # 处理可能带 Z 或 +00:00 的 ISO 格式
                     return datetime.fromisoformat(t.replace('Z', '+00:00'))
                 except:
                     return None
             return t
 
+        # 优先使用 content_updated_at 作为文档的真实更新时间
+        content_updated_at = parse_time(detail.get("content_updated_at")) or data.content_updated_at
+        updated_at = parse_time(detail.get("updated_at")) or data.updated_at or datetime.utcnow()
+
         update_dict = {
             "title": detail.get("title") or data.title,
             "slug": detail.get("slug") or data.slug,
             "repo_id": data.book.id,
-            "user_id": user_id,
+            "user_id": int(user_id) if user_id else None,
             "body": detail.get("body") or data.body,
             "body_html": detail.get("body_html") or data.body_html,
-            "updated_at": parse_time(detail.get("updated_at")) or data.updated_at or datetime.utcnow(),
-            "content_updated_at": parse_time(detail.get("content_updated_at")) or data.content_updated_at,
+            "updated_at": updated_at,
+            "content_updated_at": content_updated_at,
             "published_at": parse_time(detail.get("published_at")) or data.published_at,
             "first_published_at": parse_time(detail.get("first_published_at")) or data.first_published_at,
             # 补充统计信息
