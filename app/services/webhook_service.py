@@ -26,8 +26,11 @@ class WebhookService:
         
         if action_type in ["publish", "update"]:
             await self._handle_doc_upsert(data, background_tasks)
-            # 记录动态
-            await self.feed_service.create_activity(data)
+            # 记录动态 (仅当操作者是文档作者本人时，避免协同编辑导致的刷屏或误报)
+            if data.user_id == data.actor_id:
+                await self.feed_service.create_activity(data)
+            else:
+                logger.info(f"Skipped activity creation: actor_id ({data.actor_id}) != user_id ({data.user_id})")
         elif action_type == "delete":
             await self._handle_doc_delete(data)
             # 删除动态

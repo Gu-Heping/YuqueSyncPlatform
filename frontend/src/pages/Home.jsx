@@ -54,6 +54,27 @@ const Home = () => {
     }
   }, [activeTab, feedFilter, user]);
 
+  // Helper to merge adjacent activities for same doc
+  const processFeed = (feedList) => {
+    if (!feedList || feedList.length === 0) return [];
+    
+    const result = [];
+    let lastItem = null;
+    
+    for (const item of feedList) {
+      // If same doc and same action type as previous (which is newer in time), skip this one
+      // This effectively keeps the latest activity for a sequence of updates on the same doc
+      if (lastItem && 
+          lastItem.doc_uuid === item.doc_uuid && 
+          lastItem.action_type === item.action_type) {
+         continue;
+      }
+      result.push(item);
+      lastItem = item;
+    }
+    return result;
+  };
+
   return (
     <div className="mt-6">
       {/* Tabs */}
@@ -156,7 +177,7 @@ const Home = () => {
               </div>
             ) : feed.length > 0 ? (
               <div>
-                {feed.map((item) => (
+                {processFeed(feed).map((item) => (
                   <ActivityItem key={item._id} activity={item} />
                 ))}
               </div>
