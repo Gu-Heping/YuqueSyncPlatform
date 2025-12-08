@@ -19,22 +19,16 @@ async def get_feed(
     query = Activity.find()
     
     if filter_type == "following":
-        if not current_user.followers: # 注意：Member.followers 存的是"关注我的人"，我们需要"我关注的人"
-            # Member 模型中 followers 字段定义是 List[int] = [] # 关注者的 yuque_id 列表
-            # 这是一个被动关系。我们需要查询 Member 表中 followers 包含 current_user.yuque_id 的人
-            # 或者我们需要在 Member 模型中增加 following 字段。
-            # 让我们检查 Member 模型定义。
-            # Member.followers 是 "关注者的 yuque_id 列表"。
-            # 所以 "我关注的人" 是那些 followers 列表中包含 current_user.yuque_id 的 Member。
+        # 查询我关注的所有 Member 的 yuque_id
+        # Member.followers 是 "关注者的 yuque_id 列表"。
+        # 所以 "我关注的人" 是那些 followers 列表中包含 current_user.yuque_id 的 Member。
+        following_members = await Member.find({"followers": current_user.yuque_id}).to_list()
+        following_ids = [m.yuque_id for m in following_members]
+        
+        if not following_ids:
+            return []
             
-            # 查询我关注的所有 Member 的 yuque_id
-            following_members = await Member.find({"followers": current_user.yuque_id}).to_list()
-            following_ids = [m.yuque_id for m in following_members]
-            
-            if not following_ids:
-                return []
-                
-            query = Activity.find(In(Activity.author_id, following_ids))
+        query = Activity.find(In(Activity.author_id, following_ids))
     
     return await query.sort("-created_at").limit(limit).to_list()
 
