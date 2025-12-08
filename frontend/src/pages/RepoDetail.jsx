@@ -15,6 +15,25 @@ const TreeNode = ({ node, onSelect, selectedSlug, level = 0 }) => {
   const hasChildren = node.children && node.children.length > 0;
   const isSelected = node.slug === selectedSlug;
 
+  // Auto-expand if a child is selected
+  useEffect(() => {
+    if (hasChildren && selectedSlug) {
+      const hasSelectedChild = (nodes) => {
+        return nodes.some(child => {
+          if (child.slug === selectedSlug) return true;
+          if (child.children && child.children.length > 0) {
+            return hasSelectedChild(child.children);
+          }
+          return false;
+        });
+      };
+
+      if (hasSelectedChild(node.children)) {
+        setExpanded(true);
+      }
+    }
+  }, [selectedSlug, node, hasChildren]);
+
   const handleClick = (e) => {
     e.stopPropagation();
     if (hasChildren) {
