@@ -44,11 +44,24 @@ async def get_overview(
     # 2. 今日数据 (Today)
     today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     
-    # 今日新增文档
-    new_docs_today = await Doc.find(
-        Doc.type == "DOC",
-        Doc.created_at >= today_start
-    ).count()
+    # 今日新增文档 (兼容 created_at 为空的情况，尝试使用 first_published_at)
+    # Beanie 不支持复杂的 $ifNull 查询，这里我们分两步或直接使用聚合
+    pipeline_today_docs = [
+        {
+            "$match": {
+                "type": "DOC",
+                "$expr": {
+                    "$gte": [
+                        {"$ifNull": ["$created_at", "$first_published_at", "$updated_at"]},
+                        today_start
+                    ]
+                }
+            }
+        },
+        {"$count": "count"}
+    ]
+    today_docs_result = await Doc.aggregate(pipeline_today_docs).to_list()
+    new_docs_today = today_docs_result[0]["count"] if today_docs_result else 0
     
     # 今日活跃人数 (基于 Activity)
     active_users_today = len(await Activity.find(
@@ -83,13 +96,21 @@ async def get_trends(
         {
             "$match": {
                 "type": "DOC",
-                "created_at": {"$gte": start_date, "$lte": end_date}
+                "$expr": {
+                    "$and": [
+                        {"$gte": [{"$ifNull": ["$created_at", "$first_published_at", "$updated_at"]}, start_date]},
+                        {"$lte": [{"$ifNull": ["$created_at", "$first_published_at", "$updated_at"]}, end_date]}
+                    ]
+                }
             }
         },
         {
             "$group": {
                 "_id": {
-                    "$dateToString": {"format": "%Y-%m-%d", "date": "$created_at"}
+                    "$dateToString": {
+                        "format": "%Y-%m-%d", 
+                        "date": {"$ifNull": ["$created_at", "$first_published_at", "$updated_at"]}
+                    }
                 },
                 "count": {"$sum": 1}
             }
