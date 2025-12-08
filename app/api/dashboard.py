@@ -16,9 +16,13 @@ async def get_dashboard_overview(current_user: Member = Depends(get_current_user
     """
     获取全局概览数据
     """
+    # 使用 motor collection 直接操作，绕过 Beanie 可能存在的聚合转换问题
+    db_docs = Doc.get_motor_collection()
+    db_activities = Activity.get_motor_collection()
+
     # Debug: Check counts
-    doc_count = await Doc.count()
-    activity_count = await Activity.count()
+    doc_count = await db_docs.count_documents({})
+    activity_count = await db_activities.count_documents({})
     logger.info(f"Dashboard Overview Debug: Doc count: {doc_count}, Activity count: {activity_count}")
 
     # 1. 文档统计 (Doc)
@@ -35,27 +39,37 @@ async def get_dashboard_overview(current_user: Member = Depends(get_current_user
     ]
     
     # 2. 今日活跃用户 (Activity)
-    # 获取今日 0 点的时间 (UTC)
     now = datetime.utcnow()
     today_start = datetime(now.year, now.month, now.day)
     
     # 并行执行查询
-    # 注意：to_list(None) 确保返回所有结果，避免 Motor 报错
-    doc_stats_task = Doc.aggregate(doc_pipeline).to_list(None)
-    today_active_task = Activity.find(Activity.created_at >= today_start).distinct("author_id")
+    doc_stats_cursor = db_docs.aggregate(doc_pipeline)
+    doc_stats_list = await doc_stats_cursor.to_list(length=1)
     
-    results = await asyncio.gather(doc_stats_task, today_active_task)
+    today_active_users = await db_activities.distinct("author_id", {"created_at": {"$gte": today_start}})
     
-    logger.info(f"Dashboard Overview Results: {results}")
+    logger.info(f"Dashboard Overview Results: DocStats={doc_stats_list}, ActiveUsers={len(today_active_users)}")
 
-    doc_stats = results[0][0] if results[0] else {
+    doc_stats = doc_stats_list[0] if doc_stats_list else {
         "total_docs": 0, "total_words": 0, "total_reads": 0, "total_likes": 0
     }
-    today_active_users_count = len(results[1])
     
+    # 如果聚合结果为空但 count > 0，说明聚合管道有问题，尝试手动计算（兜底方案）
+    if doc_stats["total_docs"] == 0 and doc_count > 0:
+        logger.warning("Aggregation returned 0 but docs exist. Falling back to manual sum.")
+        # 仅用于调试或临时修复，生产环境应修复聚合
+        # 注意：这里只计算前 1000 条以避免性能问题
+        sample_docs = await db_docs.find({}, {"word_count": 1, "read_count": 1, "likes_count": 1}).to_list(length=10000)
+        doc_stats = {
+            "total_docs": doc_count,
+            "total_words": sum(d.get("word_count", 0) for d in sample_docs),
+            "total_reads": sum(d.get("read_count", 0) for d in sample_docs),
+            "total_likes": sum(d.get("likes_count", 0) for d in sample_docs)
+        }
+
     return {
         **doc_stats,
-        "today_active_users": today_active_users_count
+        "today_active_users": len(today_active_users)
     }
 
 @router.get("/trends")
