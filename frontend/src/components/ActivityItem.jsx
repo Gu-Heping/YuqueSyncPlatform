@@ -7,6 +7,16 @@ import { FileText, Edit, PlusCircle } from 'lucide-react';
 const ActivityItem = ({ activity }) => {
   const isPublish = activity.action_type === 'publish';
   
+  // 修复时间显示问题：后端返回的是 UTC 时间但可能没有 Z 后缀，导致前端按本地时间解析
+  const getDate = (dateString) => {
+    if (!dateString) return new Date();
+    // 如果是字符串且不包含时区信息（Z 或 +），则手动添加 Z 视为 UTC
+    if (typeof dateString === 'string' && !dateString.endsWith('Z') && !dateString.includes('+')) {
+      return new Date(dateString + 'Z');
+    }
+    return new Date(dateString);
+  };
+
   return (
     <div className="flex items-start p-4 bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700 last:border-0 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
       {/* Avatar */}
@@ -28,7 +38,7 @@ const ActivityItem = ({ activity }) => {
             </span>
           </div>
           <span className="text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap ml-2">
-            {formatDistanceToNow(new Date(activity.created_at), { addSuffix: true, locale: zhCN })}
+            {formatDistanceToNow(getDate(activity.created_at), { addSuffix: true, locale: zhCN })}
           </span>
         </div>
 
