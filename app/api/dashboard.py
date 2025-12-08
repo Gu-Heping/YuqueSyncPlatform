@@ -1,233 +1,186 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends
 from typing import List, Dict, Any
 from datetime import datetime, timedelta
 from app.models.schemas import Doc, Activity, Member
 from app.api.auth import get_current_user
-from beanie.operators import In, GTE, LTE
+from beanie.operators import In
+import asyncio
 
 router = APIRouter()
 
 @router.get("/overview")
-async def get_overview(
-    start_date: datetime = Query(default=None),
-    end_date: datetime = Query(default=None),
-    current_user: Member = Depends(get_current_user)
-):
+async def get_dashboard_overview(current_user: Member = Depends(get_current_user)):
     """
     获取全局概览数据
     """
-    if not end_date:
-        end_date = datetime.utcnow()
-    if not start_date:
-        start_date = end_date - timedelta(days=30)
-
-    # 1. 累计数据 (Total)
-    # 注意：累计数据通常是全量的，不受日期过滤影响，或者根据需求定义。
-    # 这里我们定义：总文档数等是全量的。
-    total_docs = await Doc.find(Doc.type == "DOC").count()
-    
-    # 聚合计算总字数、总阅读、总点赞
-    pipeline_total = [
-        {"$match": {"type": "DOC"}},
-        {"$group": {
-            "_id": None,
-            "total_words": {"$sum": "$word_count"},
-            "total_reads": {"$sum": "$read_count"},
-            "total_likes": {"$sum": "$likes_count"}
-        }}
-    ]
-    total_stats = await Doc.aggregate(pipeline_total).to_list()
-    total_words = total_stats[0]["total_words"] if total_stats else 0
-    total_reads = total_stats[0]["total_reads"] if total_stats else 0
-    total_likes = total_stats[0]["total_likes"] if total_stats else 0
-
-    # 2. 今日数据 (Today)
-    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-    
-    # 今日新增文档 (兼容 created_at 为空的情况，尝试使用 first_published_at)
-    # Beanie 不支持复杂的 $ifNull 查询，这里我们分两步或直接使用聚合
-    pipeline_today_docs = [
+    # 1. 文档统计 (Doc)
+    doc_pipeline = [
         {
-            "$match": {
-                "type": "DOC",
-                "$expr": {
-                    "$gte": [
-                        {"$ifNull": ["$created_at", "$first_published_at", "$updated_at"]},
-                        today_start
-                    ]
-                }
+            "$group": {
+                "_id": None,
+                "total_docs": {"$sum": 1},
+                "total_words": {"$sum": "$word_count"},
+                "total_reads": {"$sum": "$read_count"},
+                "total_likes": {"$sum": "$likes_count"}
             }
-        },
-        {"$count": "count"}
+        }
     ]
-    today_docs_result = await Doc.aggregate(pipeline_today_docs).to_list()
-    new_docs_today = today_docs_result[0]["count"] if today_docs_result else 0
     
-    # 今日活跃人数 (基于 Activity)
-    active_users_today = len(await Activity.find(
-        Activity.created_at >= today_start
-    ).distinct("author_id"))
-
+    # 2. 今日活跃用户 (Activity)
+    # 获取今日 0 点的时间 (UTC)
+    # 注意：这里简化处理，假设服务器时间为 UTC。如果需要严格的 UTC+8，需要在应用层处理时间偏移
+    now = datetime.utcnow()
+    today_start = datetime(now.year, now.month, now.day)
+    
+    # 并行执行查询
+    doc_stats_task = Doc.aggregate(doc_pipeline).to_list()
+    today_active_task = Activity.find(Activity.created_at >= today_start).distinct("author_id")
+    
+    results = await asyncio.gather(doc_stats_task, today_active_task)
+    
+    doc_stats = results[0][0] if results[0] else {
+        "total_docs": 0, "total_words": 0, "total_reads": 0, "total_likes": 0
+    }
+    today_active_users_count = len(results[1])
+    
     return {
-        "total_docs": total_docs,
-        "total_words": total_words,
-        "total_reads": total_reads,
-        "total_likes": total_likes,
-        "new_docs_today": new_docs_today,
-        "active_users_today": active_users_today
+        **doc_stats,
+        "today_active_users": today_active_users_count
     }
 
 @router.get("/trends")
-async def get_trends(
-    start_date: datetime = Query(default=None),
-    end_date: datetime = Query(default=None),
-    current_user: Member = Depends(get_current_user)
-):
+async def get_dashboard_trends(days: int = 30, current_user: Member = Depends(get_current_user)):
     """
-    获取趋势分析数据 (按天分组)
+    获取最近 30 天的趋势数据 (新增文档 & 活跃人数)
     """
-    if not end_date:
-        end_date = datetime.utcnow()
-    if not start_date:
-        start_date = end_date - timedelta(days=30)
-
-    # 1. 每日新增文档趋势
-    pipeline_docs = [
+    end_date = datetime.utcnow()
+    start_date = end_date - timedelta(days=days)
+    
+    # 1. 每日新增文档 (Doc created_at)
+    doc_trend_pipeline = [
         {
             "$match": {
-                "type": "DOC",
-                "$expr": {
-                    "$and": [
-                        {"$gte": [{"$ifNull": ["$created_at", "$first_published_at", "$updated_at"]}, start_date]},
-                        {"$lte": [{"$ifNull": ["$created_at", "$first_published_at", "$updated_at"]}, end_date]}
-                    ]
-                }
+                "created_at": {"$gte": start_date}
             }
         },
         {
             "$group": {
                 "_id": {
-                    "$dateToString": {
-                        "format": "%Y-%m-%d", 
-                        "date": {"$ifNull": ["$created_at", "$first_published_at", "$updated_at"]}
-                    }
+                    "$dateToString": {"format": "%Y-%m-%d", "date": "$created_at"}
                 },
                 "count": {"$sum": 1}
             }
-        },
-        {"$sort": {"_id": 1}}
+        }
     ]
-    docs_trend = await Doc.aggregate(pipeline_docs).to_list()
-    docs_map = {item["_id"]: item["count"] for item in docs_trend}
-
-    # 2. 每日活跃人数趋势
-    pipeline_activity = [
+    
+    # 2. 每日活跃人数 (Activity created_at -> author_id distinct)
+    # MongoDB 聚合去重计数比较麻烦，通常用 $addToSet 然后 $size
+    activity_trend_pipeline = [
         {
             "$match": {
-                "created_at": {"$gte": start_date, "$lte": end_date}
+                "created_at": {"$gte": start_date}
             }
         },
         {
             "$group": {
                 "_id": {
-                    "date": {"$dateToString": {"format": "%Y-%m-%d", "date": "$created_at"}},
-                    "user": "$author_id"
-                }
+                    "$dateToString": {"format": "%Y-%m-%d", "date": "$created_at"}
+                },
+                "authors": {"$addToSet": "$author_id"}
             }
         },
         {
-            "$group": {
-                "_id": "$_id.date",
-                "count": {"$sum": 1}
+            "$project": {
+                "_id": 1,
+                "count": {"$size": "$authors"}
             }
-        },
-        {"$sort": {"_id": 1}}
+        }
     ]
-    activity_trend = await Activity.aggregate(pipeline_activity).to_list()
-    activity_map = {item["_id"]: item["count"] for item in activity_trend}
-
-    # 3. 合并并填充日期 (补0)
-    result = []
-    current = start_date
-    while current <= end_date:
-        date_str = current.strftime("%Y-%m-%d")
-        result.append({
-            "date": date_str,
-            "new_docs": docs_map.get(date_str, 0),
-            "active_users": activity_map.get(date_str, 0)
+    
+    doc_trends_task = Doc.aggregate(doc_trend_pipeline).to_list()
+    activity_trends_task = Activity.aggregate(activity_trend_pipeline).to_list()
+    
+    results = await asyncio.gather(doc_trends_task, activity_trends_task)
+    
+    # 格式化数据，补全日期
+    doc_data_map = {item["_id"]: item["count"] for item in results[0]}
+    activity_data_map = {item["_id"]: item["count"] for item in results[1]}
+    
+    final_data = []
+    for i in range(days):
+        date = (start_date + timedelta(days=i)).strftime("%Y-%m-%d")
+        final_data.append({
+            "date": date,
+            "new_docs": doc_data_map.get(date, 0),
+            "active_users": activity_data_map.get(date, 0)
         })
-        current += timedelta(days=1)
-
-    return result
+        
+    return final_data
 
 @router.get("/rankings")
-async def get_rankings(
-    current_user: Member = Depends(get_current_user)
-):
+async def get_dashboard_rankings(current_user: Member = Depends(get_current_user)):
     """
-    获取英雄榜数据 (Top 10)
+    获取排行榜数据 (Top 10)
     """
-    # 1. 笔耕不辍榜 (Word Count)
-    pipeline_words = [
-        {"$match": {"type": "DOC", "user_id": {"$ne": None}}},
-        {"$group": {
-            "_id": "$user_id",
-            "total_count": {"$sum": "$word_count"}
-        }},
-        {"$sort": {"total_count": -1}},
-        {"$limit": 10}
-    ]
-    word_rankings = await Doc.aggregate(pipeline_words).to_list()
-
-    # 2. 人气之星榜 (Likes Count)
-    pipeline_likes = [
-        {"$match": {"type": "DOC", "user_id": {"$ne": None}}},
-        {"$group": {
-            "_id": "$user_id",
-            "total_count": {"$sum": "$likes_count"}
-        }},
-        {"$sort": {"total_count": -1}},
-        {"$limit": 10}
-    ]
-    like_rankings = await Doc.aggregate(pipeline_likes).to_list()
-
-    # 3. 知识传播榜 (Read Count)
-    pipeline_reads = [
-        {"$match": {"type": "DOC", "user_id": {"$ne": None}}},
-        {"$group": {
-            "_id": "$user_id",
-            "total_count": {"$sum": "$read_count"}
-        }},
-        {"$sort": {"total_count": -1}},
-        {"$limit": 10}
-    ]
-    read_rankings = await Doc.aggregate(pipeline_reads).to_list()
-
-    # 4. 补充用户信息
-    # 收集所有涉及的 user_id
-    user_ids = set()
-    for r in word_rankings + like_rankings + read_rankings:
-        if r["_id"]:
-            user_ids.add(r["_id"])
+    limit = 10
     
+    # 1. 笔耕不辍榜 (Word Count)
+    word_pipeline = [
+        {"$group": {"_id": "$user_id", "value": {"$sum": "$word_count"}}},
+        {"$sort": {"value": -1}},
+        {"$limit": limit}
+    ]
+    
+    # 2. 人气之星榜 (Likes)
+    likes_pipeline = [
+        {"$group": {"_id": "$user_id", "value": {"$sum": "$likes_count"}}},
+        {"$sort": {"value": -1}},
+        {"$limit": limit}
+    ]
+    
+    # 3. 知识传播榜 (Reads)
+    reads_pipeline = [
+        {"$group": {"_id": "$user_id", "value": {"$sum": "$read_count"}}},
+        {"$sort": {"value": -1}},
+        {"$limit": limit}
+    ]
+    
+    # 并行执行聚合
+    tasks = [
+        Doc.aggregate(word_pipeline).to_list(),
+        Doc.aggregate(likes_pipeline).to_list(),
+        Doc.aggregate(reads_pipeline).to_list()
+    ]
+    results = await asyncio.gather(*tasks)
+    
+    # 收集所有涉及的用户 ID
+    user_ids = set()
+    for rank_list in results:
+        for item in rank_list:
+            if item["_id"]:
+                user_ids.add(item["_id"])
+                
+    # 批量获取用户信息
     members = await Member.find(In(Member.yuque_id, list(user_ids))).to_list()
-    member_map = {m.yuque_id: m for m in members}
-
-    def format_ranking(rankings):
+    member_map = {m.yuque_id: {"name": m.name, "avatar_url": m.avatar_url} for m in members}
+    
+    # 组装结果
+    def format_rank(data_list):
         formatted = []
-        for item in rankings:
+        for item in data_list:
             uid = item["_id"]
-            member = member_map.get(uid)
+            if not uid: continue
+            user_info = member_map.get(uid, {"name": "Unknown", "avatar_url": ""})
             formatted.append({
                 "user_id": uid,
-                "name": member.name if member else "Unknown",
-                "avatar_url": member.avatar_url if member else None,
-                "value": item["total_count"]
+                "name": user_info["name"],
+                "avatar_url": user_info["avatar_url"],
+                "value": item["value"]
             })
         return formatted
 
     return {
-        "word_rankings": format_ranking(word_rankings),
-        "like_rankings": format_ranking(like_rankings),
-        "read_rankings": format_ranking(read_rankings)
+        "word_rank": format_rank(results[0]),
+        "likes_rank": format_rank(results[1]),
+        "read_rank": format_rank(results[2])
     }

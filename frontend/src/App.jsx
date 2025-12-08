@@ -5,7 +5,7 @@ import Home from './pages/Home';
 import RepoList from './pages/RepoList';
 import RepoDetail from './pages/RepoDetail';
 import Members from './pages/Members';
-import Dashboard from './pages/Dashboard';
+import DashboardPage from './pages/DashboardPage';
 import LoginPage from './pages/LoginPage';
 import Profile from './pages/Profile';
 import ChatWidget from './components/ChatWidget';
@@ -22,7 +22,7 @@ function App() {
             <Route path="repos/:repoId" element={<RepoDetail />} />
             <Route path="repos/:repoId/docs/:docSlug" element={<RepoDetail />} />
             <Route path="members" element={<Members />} />
-            <Route path="dashboard" element={<Dashboard />} />
+            <Route path="dashboard" element={<DashboardPage />} />
             <Route path="login" element={<LoginPage />} />
             <Route path="profile" element={<Profile />} />
           </Route>
