@@ -23,7 +23,24 @@ async def get_dashboard_overview(current_user: Member = Depends(get_current_user
     # Debug: Check counts
     doc_count = await db_docs.count_documents({})
     activity_count = await db_activities.count_documents({})
-    logger.info(f"Dashboard Overview Debug: Doc count: {doc_count}, Activity count: {activity_count}")
+    
+    # 获取数据库信息用于调试
+    db_name = db_docs.database.name
+    collection_name = db_docs.name
+    
+    logger.info(f"Dashboard Overview Debug: DB={db_name}, Coll={collection_name}, Doc count: {doc_count}, Activity count: {activity_count}")
+
+    # 如果数据为0，尝试列出所有集合，帮助排查是否连错了库
+    if doc_count == 0:
+        try:
+            collection_names = await db_docs.database.list_collection_names()
+            logger.warning(f"Docs collection is empty. Available collections in {db_name}: {collection_names}")
+            # 尝试在其他集合中查找 (比如 yuque_docs)
+            if "yuque_docs" in collection_names:
+                 alt_count = await db_docs.database["yuque_docs"].count_documents({})
+                 logger.info(f"Found 'yuque_docs' collection with {alt_count} documents.")
+        except Exception as e:
+            logger.error(f"Failed to list collections: {e}")
 
     # 1. 文档统计 (Doc)
     doc_pipeline = [
@@ -67,10 +84,21 @@ async def get_dashboard_overview(current_user: Member = Depends(get_current_user
             "total_likes": sum(d.get("likes_count", 0) for d in sample_docs)
         }
 
-    return {
+    # 返回调试信息 (仅在数据异常时)
+    response_data = {
         **doc_stats,
         "today_active_users": len(today_active_users)
     }
+    
+    if doc_count == 0:
+        response_data["_debug"] = {
+            "db_name": db_name,
+            "collection_name": collection_name,
+            "doc_count": doc_count,
+            "message": "No documents found in collection. Check database connection and collection name."
+        }
+        
+    return response_data
 
 @router.get("/trends")
 async def get_dashboard_trends(days: int = 30, current_user: Member = Depends(get_current_user)):
