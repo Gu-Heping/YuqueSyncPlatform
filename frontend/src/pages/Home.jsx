@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { BookOpen, Users, Activity, Bell } from 'lucide-react';
+import { BookOpen, Users, Activity, Bell, BarChart2 } from 'lucide-react';
 import { getFeed, checkFeedStatus, markFeedRead } from '../api';
 import ActivityItem from '../components/ActivityItem';
 import { useAuth } from '../context/AuthContext';
@@ -134,6 +134,21 @@ const Home = () => {
             </div>
             <p className="font-normal text-gray-700 dark:text-gray-300">
               查看团队成员列表，搜索成员并查看其贡献的文档。
+            </p>
+          </Link>
+
+          <Link
+            to="/dashboard"
+            className="group block p-6 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+          >
+            <div className="flex items-center mb-4">
+              <div className="p-3 bg-purple-100 dark:bg-purple-900/30 rounded-full group-hover:bg-purple-200 dark:group-hover:bg-purple-900/50 transition-colors">
+                <BarChart2 className="w-8 h-8 text-purple-600 dark:text-purple-400" />
+              </div>
+              <h5 className="ml-4 text-2xl font-bold tracking-tight text-gray-900 dark:text-white">数据看板</h5>
+            </div>
+            <p className="font-normal text-gray-700 dark:text-gray-300">
+              查看知识库统计数据、趋势分析和活跃度概览。
             </p>
           </Link>
         </div>
