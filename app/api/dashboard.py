@@ -17,8 +17,8 @@ async def get_dashboard_overview(current_user: Member = Depends(get_current_user
     获取全局概览数据
     """
     # 使用 motor collection 直接操作，绕过 Beanie 可能存在的聚合转换问题
-    db_docs = Doc.get_motor_collection()
-    db_activities = Activity.get_motor_collection()
+    db_docs = Doc.get_pymongo_collection()
+    db_activities = Activity.get_pymongo_collection()
 
     # Debug: Check counts
     doc_count = await db_docs.count_documents({})
@@ -149,8 +149,12 @@ async def get_dashboard_trends(days: int = 30, current_user: Member = Depends(ge
         }
     ]
     
-    doc_trends_task = Doc.aggregate(doc_trend_pipeline).to_list(None)
-    activity_trends_task = Activity.aggregate(activity_trend_pipeline).to_list(None)
+    # 使用 motor collection 直接操作
+    db_docs = Doc.get_pymongo_collection()
+    db_activities = Activity.get_pymongo_collection()
+
+    doc_trends_task = db_docs.aggregate(doc_trend_pipeline).to_list(None)
+    activity_trends_task = db_activities.aggregate(activity_trend_pipeline).to_list(None)
     
     results = await asyncio.gather(doc_trends_task, activity_trends_task)
     
@@ -197,11 +201,14 @@ async def get_dashboard_rankings(current_user: Member = Depends(get_current_user
         {"$limit": limit}
     ]
     
+    # 使用 motor collection 直接操作
+    db_docs = Doc.get_pymongo_collection()
+
     # 并行执行聚合
     tasks = [
-        Doc.aggregate(word_pipeline).to_list(None),
-        Doc.aggregate(likes_pipeline).to_list(None),
-        Doc.aggregate(reads_pipeline).to_list(None)
+        db_docs.aggregate(word_pipeline).to_list(None),
+        db_docs.aggregate(likes_pipeline).to_list(None),
+        db_docs.aggregate(reads_pipeline).to_list(None)
     ]
     results = await asyncio.gather(*tasks)
     

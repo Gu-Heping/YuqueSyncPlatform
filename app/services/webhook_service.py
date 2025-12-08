@@ -123,7 +123,6 @@ class WebhookService:
             update_dict["uuid"] = f"webhook-{data.id}"
             update_dict["yuque_id"] = data.id
             update_dict["type"] = "DOC" # 默认为文档
-            update_dict["created_at"] = data.created_at or datetime.utcnow() # 确保有创建时间
             
             new_doc = Doc(**update_dict)
             await new_doc.insert()
