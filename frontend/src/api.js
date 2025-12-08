@@ -18,6 +18,21 @@ api.interceptors.request.use(
   }
 );
 
+// Add a response interceptor to handle 401 errors
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response && error.response.status === 401) {
+      // Clear token and redirect to login
+      localStorage.removeItem('token');
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login';
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
 export const getRepos = () => api.get('/repos');
 export const getRepoDocs = (repoId) => api.get('/docs', { params: { repo_id: repoId, limit: 10000 } });
 export const getDocDetail = (slug) => api.get(`/docs/${slug}`);
