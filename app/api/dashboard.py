@@ -5,6 +5,9 @@ from app.models.schemas import Doc, Activity, Member
 from app.api.auth import get_current_user
 from beanie.operators import In
 import asyncio
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -13,6 +16,11 @@ async def get_dashboard_overview(current_user: Member = Depends(get_current_user
     """
     获取全局概览数据
     """
+    # Debug: Check counts
+    doc_count = await Doc.count()
+    activity_count = await Activity.count()
+    logger.info(f"Dashboard Overview Debug: Doc count: {doc_count}, Activity count: {activity_count}")
+
     # 1. 文档统计 (Doc)
     doc_pipeline = [
         {
@@ -28,16 +36,18 @@ async def get_dashboard_overview(current_user: Member = Depends(get_current_user
     
     # 2. 今日活跃用户 (Activity)
     # 获取今日 0 点的时间 (UTC)
-    # 注意：这里简化处理，假设服务器时间为 UTC。如果需要严格的 UTC+8，需要在应用层处理时间偏移
     now = datetime.utcnow()
     today_start = datetime(now.year, now.month, now.day)
     
     # 并行执行查询
-    doc_stats_task = Doc.aggregate(doc_pipeline).to_list()
+    # 注意：to_list(None) 确保返回所有结果，避免 Motor 报错
+    doc_stats_task = Doc.aggregate(doc_pipeline).to_list(None)
     today_active_task = Activity.find(Activity.created_at >= today_start).distinct("author_id")
     
     results = await asyncio.gather(doc_stats_task, today_active_task)
     
+    logger.info(f"Dashboard Overview Results: {results}")
+
     doc_stats = results[0][0] if results[0] else {
         "total_docs": 0, "total_words": 0, "total_reads": 0, "total_likes": 0
     }
@@ -97,8 +107,8 @@ async def get_dashboard_trends(days: int = 30, current_user: Member = Depends(ge
         }
     ]
     
-    doc_trends_task = Doc.aggregate(doc_trend_pipeline).to_list()
-    activity_trends_task = Activity.aggregate(activity_trend_pipeline).to_list()
+    doc_trends_task = Doc.aggregate(doc_trend_pipeline).to_list(None)
+    activity_trends_task = Activity.aggregate(activity_trend_pipeline).to_list(None)
     
     results = await asyncio.gather(doc_trends_task, activity_trends_task)
     
@@ -147,9 +157,9 @@ async def get_dashboard_rankings(current_user: Member = Depends(get_current_user
     
     # 并行执行聚合
     tasks = [
-        Doc.aggregate(word_pipeline).to_list(),
-        Doc.aggregate(likes_pipeline).to_list(),
-        Doc.aggregate(reads_pipeline).to_list()
+        Doc.aggregate(word_pipeline).to_list(None),
+        Doc.aggregate(likes_pipeline).to_list(None),
+        Doc.aggregate(reads_pipeline).to_list(None)
     ]
     results = await asyncio.gather(*tasks)
     
