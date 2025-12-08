@@ -257,6 +257,7 @@ class RAGService:
                 doc_info_map[doc_id] = {
                     "title": doc.title,
                     "slug": doc.slug,
+                    "repo_id": doc.repo_id,
                     # 使用高亮摘要
                     "content": self._highlight_text(text_content, query),
                     "updated_date": doc.updated_at.strftime("%Y-%m-%d") if doc.updated_at else "",
@@ -278,6 +279,7 @@ class RAGService:
                 doc_info_map[doc_id] = {
                     "title": doc.metadata.get("title"),
                     "slug": doc.metadata.get("slug"),
+                    "repo_id": doc.metadata.get("repo_id"),
                     # 对向量检索的片段也进行高亮
                     "content": self._highlight_text(doc.page_content, query),
                     "updated_date": doc.metadata.get("updated_date"),

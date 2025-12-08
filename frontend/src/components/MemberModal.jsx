@@ -1,12 +1,52 @@
 import React, { useEffect, useState } from 'react';
-import { getMemberDocs } from '../api';
-import { FileText, X, Loader2 } from 'lucide-react';
+import { getMemberDocs, followMember, unfollowMember } from '../api';
+import { FileText, X, Loader2, UserPlus, UserMinus } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { formatDate } from '../utils/date';
+import { useAuth } from '../context/AuthContext';
 
-const MemberModal = ({ member, onClose }) => {
+const MemberModal = ({ member, onClose, onUpdate }) => {
+  const { user } = useAuth();
   const [docs, setDocs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isFollowing, setIsFollowing] = useState(false);
+  const [followLoading, setFollowLoading] = useState(false);
+
+  useEffect(() => {
+    if (user && member) {
+      setIsFollowing(member.followers && member.followers.includes(user.yuque_id));
+    }
+  }, [user, member]);
+
+  const handleFollowToggle = async () => {
+    if (!user) return;
+    setFollowLoading(true);
+    try {
+      if (isFollowing) {
+        await unfollowMember(member.yuque_id);
+        setIsFollowing(false);
+        if (onUpdate) {
+          onUpdate({
+            ...member,
+            followers: (member.followers || []).filter(id => id !== user.yuque_id)
+          });
+        }
+      } else {
+        await followMember(member.yuque_id);
+        setIsFollowing(true);
+        if (onUpdate) {
+          onUpdate({
+            ...member,
+            followers: [...(member.followers || []), user.yuque_id]
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Failed to toggle follow status:', error);
+    } finally {
+      setFollowLoading(false);
+    }
+  };
 
   useEffect(() => {
     const fetchDocs = async () => {
@@ -40,16 +80,39 @@ const MemberModal = ({ member, onClose }) => {
           >
             <X size={20} />
           </button>
-          <div className="flex items-center space-x-4">
-            <img
-              src={member.avatar_url || 'https://gw.alipayobjects.com/zos/rmsportal/BiazfanxmamNRoxxVxka.png'}
-              alt={member.name}
-              className="w-16 h-16 rounded-full object-cover border-2 border-white dark:border-gray-700 shadow-sm"
-            />
-            <div>
-              <h3 className="text-xl font-bold text-gray-900 dark:text-white">{member.name}</h3>
-              <p className="text-sm text-gray-500 dark:text-gray-400">@{member.login}</p>
+          <div className="flex items-center justify-between pr-8">
+            <div className="flex items-center space-x-4">
+              <img
+                src={member.avatar_url || 'https://gw.alipayobjects.com/zos/rmsportal/BiazfanxmamNRoxxVxka.png'}
+                alt={member.name}
+                className="w-16 h-16 rounded-full object-cover border-2 border-white dark:border-gray-700 shadow-sm"
+              />
+              <div>
+                <h3 className="text-xl font-bold text-gray-900 dark:text-white">{member.name}</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400">@{member.login}</p>
+              </div>
             </div>
+
+            {user && user.yuque_id !== member.yuque_id && (
+              <button
+                onClick={handleFollowToggle}
+                disabled={followLoading}
+                className={`flex items-center px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+                  isFollowing
+                    ? 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300'
+                    : 'bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700'
+                }`}
+              >
+                {followLoading ? (
+                  <Loader2 size={16} className="animate-spin mr-2" />
+                ) : isFollowing ? (
+                  <UserMinus size={16} className="mr-2" />
+                ) : (
+                  <UserPlus size={16} className="mr-2" />
+                )}
+                {isFollowing ? '已关注' : '关注'}
+              </button>
+            )}
           </div>
           <p className="mt-3 text-gray-600 dark:text-gray-300 text-sm leading-relaxed">
             {member.description || '暂无简介'}

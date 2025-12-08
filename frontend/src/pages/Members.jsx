@@ -94,6 +94,13 @@ const Members = () => {
     }
   };
 
+  const handleMemberUpdate = (updatedMember) => {
+    setMembers(prev => prev.map(m => m.yuque_id === updatedMember.yuque_id ? updatedMember : m));
+    if (selectedMember && selectedMember.yuque_id === updatedMember.yuque_id) {
+      setSelectedMember(updatedMember);
+    }
+  };
+
   useEffect(() => {
     const lowerTerm = searchTerm.toLowerCase();
     const filtered = members.filter(
@@ -149,6 +156,7 @@ const Members = () => {
         <MemberModal 
           member={selectedMember} 
           onClose={() => setSelectedMember(null)} 
+          onUpdate={handleMemberUpdate}
         />
       )}
     </div>

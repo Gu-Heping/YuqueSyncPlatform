@@ -67,6 +67,23 @@ class WebhookService:
         # 尝试查找现有文档
         doc = await Doc.find_one(Doc.yuque_id == data.id)
         
+        # 补充：尝试从语雀 API 获取最新的统计数据 (特别是 read_count，Webhook 中可能缺失)
+        read_count = data.read_count
+        likes_count = data.likes_count
+        comments_count = data.comments_count
+        
+        sync_service = SyncService()
+        try:
+            detail = await sync_service.client.get_doc_detail(data.book.id, data.slug)
+            if detail:
+                read_count = detail.get('read_count', read_count)
+                likes_count = detail.get('likes_count', likes_count)
+                comments_count = detail.get('comments_count', comments_count)
+        except Exception as e:
+            logger.warning(f"Failed to fetch doc stats from API: {e}")
+        finally:
+            await sync_service.client.close()
+
         # 2. 准备更新的数据
         # 直接使用 Webhook Payload 中的数据，不再额外调用 API
         update_dict = {
@@ -83,9 +100,9 @@ class WebhookService:
             
             # 统计信息
             "word_count": data.word_count,
-            "likes_count": data.likes_count,
-            "read_count": data.read_count,
-            "comments_count": data.comments_count,
+            "likes_count": likes_count,
+            "read_count": read_count,
+            "comments_count": comments_count,
         }
         
         if doc:

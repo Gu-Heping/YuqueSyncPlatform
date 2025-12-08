@@ -294,6 +294,13 @@ const RepoDetail = () => {
     setIsSidebarOpen(false);
   };
 
+  const handleMemberUpdate = (updatedMember) => {
+    setMembers(prev => prev.map(m => m.yuque_id === updatedMember.yuque_id ? updatedMember : m));
+    if (selectedMember && selectedMember.yuque_id === updatedMember.yuque_id) {
+      setSelectedMember(updatedMember);
+    }
+  };
+
   if (loading) return (
     <div className="flex justify-center items-center h-[calc(100vh-8rem)]">
       <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
@@ -691,6 +698,7 @@ const RepoDetail = () => {
         <MemberModal 
           member={selectedMember} 
           onClose={() => setSelectedMember(null)} 
+          onUpdate={handleMemberUpdate}
         />
       )}
     </div>
