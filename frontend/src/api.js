@@ -33,6 +33,11 @@ export const getFeed = (filter = 'all') => api.get('/feed', { params: { filter }
 export const checkFeedStatus = () => api.get('/feed/status');
 export const markFeedRead = () => api.post('/feed/read');
 
+// Dashboard Features
+export const getDashboardOverview = (params) => api.get('/dashboard/overview', { params });
+export const getDashboardTrends = (params) => api.get('/dashboard/trends', { params });
+export const getDashboardRankings = () => api.get('/dashboard/rankings');
+
 // AI Features
 export const searchDocs = (query) => api.post('/search', { query });
 export const askAI = (query) => api.post('/chat/rag', { query });
