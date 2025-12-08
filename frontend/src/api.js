@@ -28,6 +28,11 @@ export const getMemberDocs = (userId) => api.get('/docs', { params: { user_id: u
 export const followMember = (memberId) => api.post(`/members/${memberId}/follow`);
 export const unfollowMember = (memberId) => api.post(`/members/${memberId}/unfollow`);
 
+// Feed Features
+export const getFeed = (filter = 'all') => api.get('/feed', { params: { filter } });
+export const checkFeedStatus = () => api.get('/feed/status');
+export const markFeedRead = () => api.post('/feed/read');
+
 // AI Features
 export const searchDocs = (query) => api.post('/search', { query });
 export const askAI = (query) => api.post('/chat/rag', { query });

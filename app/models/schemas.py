@@ -36,10 +36,34 @@ class Member(Document):
     status: Optional[int] = None # 1: Normal, 0: Inactive
     is_active: bool = True # 是否在职
     followers: List[int] = [] # 关注者的 yuque_id 列表
+    last_read_feed_at: datetime = Field(default_factory=lambda: datetime(1970, 1, 1)) # 最后一次查看动态的时间
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
     class Settings:
         name = "members"
+
+class Activity(Document):
+    """
+    动态流模型
+    """
+    doc_uuid: str = Indexed() # 关联文档 UUID (或 yuque_id)
+    doc_title: str
+    doc_slug: str # 用于跳转
+    repo_id: int # 用于跳转
+    repo_name: str
+    author_id: int = Indexed()
+    author_name: str
+    author_avatar: Optional[str] = None
+    action_type: str # publish / update
+    summary: str # 纯文本摘要
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    class Settings:
+        name = "activities"
+        indexes = [
+            [("created_at", -1)], # 按时间倒序
+            [("author_id", 1), ("created_at", -1)] # 关注人筛选
+        ]
 
 class Repo(Document):
     """

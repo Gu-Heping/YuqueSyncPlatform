@@ -3,6 +3,7 @@ from datetime import datetime
 from app.models.schemas import WebhookPayload, Doc, Comment, Member
 from app.services.sync_service import SyncService
 from app.services.email_service import EmailService
+from app.services.feed_service import FeedService
 from app.core.config import settings
 from typing import Optional
 from fastapi import BackgroundTasks
@@ -15,6 +16,7 @@ class WebhookService:
     """
     def __init__(self):
         self.email_service = EmailService()
+        self.feed_service = FeedService()
 
     async def handle_event(self, payload: WebhookPayload, background_tasks: Optional[BackgroundTasks] = None):
         data = payload.data
@@ -24,8 +26,12 @@ class WebhookService:
         
         if action_type in ["publish", "update"]:
             await self._handle_doc_upsert(data, background_tasks)
+            # 记录动态
+            await self.feed_service.create_activity(data)
         elif action_type == "delete":
             await self._handle_doc_delete(data)
+            # 删除动态
+            await self.feed_service.delete_activity(data.id)
         elif action_type in ["comment_create", "comment_update", "comment_reply_create"]:
             await self._handle_comment_upsert(data)
         else:
