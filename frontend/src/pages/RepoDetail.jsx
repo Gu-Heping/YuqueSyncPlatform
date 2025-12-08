@@ -6,6 +6,7 @@ import DOMPurify from 'dompurify';
 import 'github-markdown-css/github-markdown.css';
 import AISummary from '../components/AISummary';
 import MemberModal from '../components/MemberModal';
+import ImagePreview from '../components/ImagePreview';
 import { formatDate } from '../utils/date';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/github.css';
@@ -117,6 +118,7 @@ const RepoDetail = () => {
   const [treeData, setTreeData] = useState([]);
   const [flatDocs, setFlatDocs] = useState([]);
   const [selectedDoc, setSelectedDoc] = useState(null);
+  const [previewImage, setPreviewImage] = useState(null);
   const markdownRef = useRef(null);
 
   useEffect(() => {
@@ -471,6 +473,11 @@ const RepoDetail = () => {
                 ref={markdownRef}
                 className="markdown-body dark:bg-gray-800 dark:text-gray-200"
                 dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(selectedDoc.body_html) }} 
+                onClick={(e) => {
+                  if (e.target.tagName === 'IMG') {
+                    setPreviewImage(e.target.src);
+                  }
+                }}
               />
               
               {repoInfo && (
@@ -718,6 +725,14 @@ const RepoDetail = () => {
           member={selectedMember} 
           onClose={() => setSelectedMember(null)} 
           onUpdate={handleMemberUpdate}
+        />
+      )}
+
+      {/* Image Preview */}
+      {previewImage && (
+        <ImagePreview 
+          src={previewImage} 
+          onClose={() => setPreviewImage(null)} 
         />
       )}
     </div>
