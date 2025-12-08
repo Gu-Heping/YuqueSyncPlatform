@@ -6,7 +6,6 @@ import DOMPurify from 'dompurify';
 import 'github-markdown-css/github-markdown.css';
 import AISummary from '../components/AISummary';
 import MemberModal from '../components/MemberModal';
-import ImagePreview from '../components/ImagePreview';
 import { formatDate } from '../utils/date';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/github.css';
@@ -118,25 +117,13 @@ const RepoDetail = () => {
   const [treeData, setTreeData] = useState([]);
   const [flatDocs, setFlatDocs] = useState([]);
   const [selectedDoc, setSelectedDoc] = useState(null);
-  const [previewImage, setPreviewImage] = useState(null);
   const markdownRef = useRef(null);
 
   useEffect(() => {
     if (selectedDoc && markdownRef.current) {
-      // Highlight code blocks
       const blocks = markdownRef.current.querySelectorAll('pre code');
       blocks.forEach((block) => {
         hljs.highlightElement(block);
-      });
-
-      // Add click listeners to images
-      const images = markdownRef.current.querySelectorAll('img');
-      images.forEach((img) => {
-        img.style.cursor = 'zoom-in';
-        img.onclick = (e) => {
-          e.stopPropagation();
-          setPreviewImage(img.src);
-        };
       });
     }
   }, [selectedDoc]);
@@ -733,12 +720,6 @@ const RepoDetail = () => {
           onUpdate={handleMemberUpdate}
         />
       )}
-
-      {/* Image Preview Modal */}
-      <ImagePreview 
-        src={previewImage} 
-        onClose={() => setPreviewImage(null)} 
-      />
     </div>
   );
 };
