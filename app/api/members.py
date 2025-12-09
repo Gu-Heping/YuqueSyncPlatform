@@ -1,8 +1,19 @@
+from fastapi import Query
 from fastapi import APIRouter, Depends, HTTPException, status
 from app.models.schemas import Member
 from app.api.auth import get_current_user
 
+
 router = APIRouter()
+
+@router.get("/count_with_email", summary="统计所有绑定邮箱的用户数")
+async def count_members_with_email():
+    """
+    返回所有绑定邮箱的用户数量
+    """
+    count = await Member.find({"email": {"$nin": [None, ""]}}).count()
+    return {"count": count}
+
 
 @router.post("/{target_yuque_id}/follow", summary="关注成员")
 async def follow_member(target_yuque_id: int, current_user: Member = Depends(get_current_user)):
