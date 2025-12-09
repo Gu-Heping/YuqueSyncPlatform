@@ -7,6 +7,7 @@ import 'github-markdown-css/github-markdown.css';
 import AISummary from '../components/AISummary';
 import MemberModal from '../components/MemberModal';
 import ImagePreview from '../components/ImagePreview';
+import CommentSection from '../components/CommentSection';
 import { formatDate } from '../utils/date';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/github.css';
@@ -479,6 +480,9 @@ const RepoDetail = () => {
                   }
                 }}
               />
+
+              {/* Comment Section */}
+              <CommentSection docId={selectedDoc.yuque_id} />
               
               {repoInfo && (
                 <div className="mt-8 pt-4 border-t border-gray-200 dark:border-gray-700">

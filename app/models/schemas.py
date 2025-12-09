@@ -37,6 +37,7 @@ class Member(Document):
     is_active: bool = True # 是否在职
     followers: List[int] = [] # 关注者的 yuque_id 列表
     last_read_feed_at: datetime = Field(default_factory=lambda: datetime(1970, 1, 1)) # 最后一次查看动态的时间
+    last_read_comments_at: datetime = Field(default_factory=lambda: datetime(1970, 1, 1)) # 最后一次查看评论的时间
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
     class Settings:
@@ -199,6 +200,7 @@ class Comment(Document):
     语雀评论模型
     """
     yuque_id: int = Indexed(unique=True)
+    parent_id: Optional[int] = None # 父评论 ID
     body_html: Optional[str] = None
     user_id: int
     doc_id: int
@@ -233,6 +235,7 @@ class WebhookCommentable(BaseModel):
 class WebhookData(BaseModel):
     action_type: str
     id: int
+    parent_id: Optional[int] = None # 父评论 ID
     user_id: Optional[int] = None # 文档作者 ID
     actor_id: Optional[int] = None # 操作者 ID
     

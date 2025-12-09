@@ -11,6 +11,7 @@ from app.api.auth import router as auth_router
 from app.api.members import router as members_router
 from app.api.feed import router as feed_router
 from app.api.dashboard import router as dashboard_router
+from app.api.comments import router as comments_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -48,6 +49,7 @@ app.include_router(auth_router, prefix="/api/v1/auth")
 app.include_router(members_router, prefix="/api/v1/members")
 app.include_router(feed_router, prefix="/api/v1/feed", tags=["Feed"])
 app.include_router(dashboard_router, prefix="/api/v1/dashboard", tags=["Dashboard"])
+app.include_router(comments_router, prefix="/api/v1/comments", tags=["Comments"])
 app.include_router(webhook_router, prefix="/webhook")
 
 if __name__ == "__main__":

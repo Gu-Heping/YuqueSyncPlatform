@@ -107,6 +107,80 @@ class EmailService:
         except Exception as e:
             logger.error(f"Failed to send email: {e}")
 
+    async def send_comment_notification(self, to_email: str, commenter_name: str, doc_title: str, comment_content: str, doc_url: str):
+        """
+        发送评论通知邮件
+        """
+        template_str = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <style>
+                body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
+                .container { max-width: 600px; margin: 20px auto; padding: 0; border: 1px solid #e1e4e8; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+                .header { background-color: #24292e; padding: 20px; text-align: center; }
+                .header h2 { color: #ffffff; margin: 0; font-size: 20px; font-weight: 600; }
+                .content { padding: 30px 25px; background-color: #ffffff; }
+                .comment-card { background-color: #f1f8ff; border: 1px solid #c8e1ff; border-radius: 6px; padding: 15px; margin: 20px 0; }
+                .comment-header { font-weight: 600; color: #0366d6; margin-bottom: 8px; }
+                .comment-body { color: #24292e; font-size: 14px; }
+                .button-container { text-align: center; margin-top: 30px; }
+                .button { display: inline-block; padding: 12px 24px; background-color: #2ea44f; color: white; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 16px; transition: background-color 0.2s; }
+                .button:hover { background-color: #2c974b; }
+                .footer { background-color: #f6f8fa; padding: 20px; text-align: center; font-size: 12px; color: #6a737d; border-top: 1px solid #e1e4e8; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h2>新评论通知</h2>
+                </div>
+                <div class="content">
+                    <p>Hi,</p>
+                    <p><strong>{{ commenter_name }}</strong> 在您的文档 <strong>《{{ doc_title }}》</strong> 中发表了评论：</p>
+                    
+                    <div class="comment-card">
+                        <div class="comment-header">{{ commenter_name }} 说：</div>
+                        <div class="comment-body">{{ comment_content }}</div>
+                    </div>
+
+                    <p>您可以点击下方按钮查看详情并回复：</p>
+                    
+                    <div class="button-container">
+                        <a href="{{ doc_url }}" class="button">查看评论</a>
+                    </div>
+                </div>
+                <div class="footer">
+                    <p>此邮件由 YuqueSyncPlatform 自动发送，请勿回复。</p>
+                    <p>&copy; 2025 YuqueSyncPlatform</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        
+        template = Template(template_str)
+        html_content = template.render(
+            commenter_name=commenter_name,
+            doc_title=doc_title,
+            comment_content=comment_content,
+            doc_url=doc_url
+        )
+
+        message = MessageSchema(
+            subject=f"【新评论】{commenter_name} 评论了《{doc_title}》",
+            recipients=[to_email],
+            body=html_content,
+            subtype=MessageType.html
+        )
+
+        try:
+            await self.fastmail.send_message(message)
+            logger.info(f"Sent comment notification email to {to_email}")
+        except Exception as e:
+            logger.error(f"Failed to send comment email: {e}")
+
     async def send_test_email(self, to_email: str):
         """
         发送测试邮件

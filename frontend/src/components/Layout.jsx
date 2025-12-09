@@ -1,17 +1,36 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, Outlet, useNavigate } from 'react-router-dom';
-import { Book, Users, Home, Search, Sun, Moon, Github, LogIn, LogOut, User } from 'lucide-react';
+import { Book, Users, Home, Search, Sun, Moon, Github, LogIn, LogOut, User, Bell } from 'lucide-react';
 import SearchModal from './SearchModal';
 import { useTheme } from '../hooks/useTheme';
 import { useAuth } from '../context/AuthContext';
+import { checkCommentStatus } from '../api';
 
 const Layout = () => {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [hasUnreadComments, setHasUnreadComments] = useState(false);
   const { theme, toggleTheme } = useTheme();
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const userMenuRef = useRef(null);
+
+  // Check for unread comments
+  useEffect(() => {
+    const checkComments = async () => {
+      if (!user) return;
+      try {
+        const res = await checkCommentStatus();
+        setHasUnreadComments(res.data.has_new);
+      } catch (error) {
+        console.error("Failed to check comments", error);
+      }
+    };
+    
+    checkComments();
+    const interval = setInterval(checkComments, 60000); // Poll every minute
+    return () => clearInterval(interval);
+  }, [user]);
 
   // Cmd+K / Ctrl+K shortcut
   useEffect(() => {
@@ -94,6 +113,19 @@ const Layout = () => {
               >
                 {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
               </button>
+
+              {user && (
+                <Link
+                  to="/messages"
+                  className="relative p-2 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
+                  aria-label="Messages"
+                >
+                  <Bell className="w-5 h-5" />
+                  {hasUnreadComments && (
+                    <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white dark:border-gray-800"></span>
+                  )}
+                </Link>
+              )}
 
               {user ? (
                 <div className="relative" ref={userMenuRef}>

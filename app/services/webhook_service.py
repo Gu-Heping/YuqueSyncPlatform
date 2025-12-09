@@ -8,6 +8,8 @@ from app.core.config import settings
 from typing import Optional
 from fastapi import BackgroundTasks
 
+from app.services.comment_service import CommentService
+
 logger = logging.getLogger(__name__)
 
 class WebhookService:
@@ -17,6 +19,7 @@ class WebhookService:
     def __init__(self):
         self.email_service = EmailService()
         self.feed_service = FeedService()
+        self.comment_service = CommentService()
 
     async def handle_event(self, payload: WebhookPayload, background_tasks: Optional[BackgroundTasks] = None):
         data = payload.data
@@ -36,7 +39,7 @@ class WebhookService:
             # 删除动态
             await self.feed_service.delete_activity(data.id)
         elif action_type in ["comment_create", "comment_update", "comment_reply_create"]:
-            await self._handle_comment_upsert(data)
+            await self.comment_service.handle_comment_webhook(data, background_tasks)
         else:
             logger.warning(f"Ignored unknown action_type: {action_type}")
 

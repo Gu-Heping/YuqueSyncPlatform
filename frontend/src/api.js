@@ -58,4 +58,10 @@ export const searchDocs = (query) => api.post('/search', { query });
 export const askAI = (query) => api.post('/chat/rag', { query });
 export const explainDoc = (text) => api.post('/ai/explain', { text });
 
+// Comment Features
+export const getComments = (params) => api.get('/comments', { params });
+export const checkCommentStatus = () => api.get('/comments/status');
+export const markCommentsRead = () => api.post('/comments/read');
+export const fetchDocComments = (docYuqueId) => api.get(`/comments/doc/${docYuqueId}`);
+
 export default api;

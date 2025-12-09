@@ -2,10 +2,11 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
-import { FileText, Edit, PlusCircle } from 'lucide-react';
+import { FileText, Edit, PlusCircle, MessageSquare } from 'lucide-react';
 
 const ActivityItem = ({ activity }) => {
   const isPublish = activity.action_type === 'publish';
+  const isComment = ['comment_create', 'comment_reply_create'].includes(activity.action_type);
   
   // 修复时间显示问题：后端返回的是 UTC 时间但可能没有 Z 后缀，导致前端按本地时间解析
   const getDate = (dateString) => {
@@ -16,6 +17,10 @@ const ActivityItem = ({ activity }) => {
     }
     return new Date(dateString);
   };
+
+  let actionText = '更新了文档';
+  if (isPublish) actionText = '发布了文档';
+  if (isComment) actionText = '评论了文档';
 
   return (
     <div className="flex items-start p-4 bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700 last:border-0 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
@@ -34,7 +39,7 @@ const ActivityItem = ({ activity }) => {
           <div className="text-sm text-gray-900 dark:text-gray-100">
             <span className="font-semibold mr-1">{activity.author_name}</span>
             <span className="text-gray-500 dark:text-gray-400">
-              {isPublish ? '发布了文档' : '更新了文档'}
+              {actionText}
             </span>
           </div>
           <span className="text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap ml-2">
@@ -49,11 +54,10 @@ const ActivityItem = ({ activity }) => {
         >
            {/* I will assume I will fix the backend to include repo_id and slug */}
            <div className="flex items-center mb-1">
-             {isPublish ? (
-               <PlusCircle size={14} className="text-green-500 mr-2" />
-             ) : (
-               <Edit size={14} className="text-blue-500 mr-2" />
-             )}
+             {isPublish && <PlusCircle size={14} className="text-green-500 mr-2" />}
+             {activity.action_type === 'update' && <Edit size={14} className="text-blue-500 mr-2" />}
+             {isComment && <MessageSquare size={14} className="text-purple-500 mr-2" />}
+             
              <h4 className="text-sm font-medium text-gray-800 dark:text-gray-200 group-hover:text-blue-600 dark:group-hover:text-blue-400 truncate">
                {activity.doc_title}
              </h4>
