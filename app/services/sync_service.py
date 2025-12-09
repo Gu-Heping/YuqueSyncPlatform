@@ -434,8 +434,14 @@ class SyncService:
     async def _upsert_doc(self, data: Dict) -> Optional[Doc]:
         # 使用 uuid 作为唯一键进行 upsert
         doc = Doc(**data)
+        
+        update_data = doc.model_dump(exclude={"id"})
+        # 如果 created_at 为 None，则从更新操作中移除，避免覆盖已有数据的创建时间
+        if update_data.get("created_at") is None:
+            update_data.pop("created_at", None)
+
         await Doc.find_one(Doc.uuid == doc.uuid).upsert(
-            {"$set": doc.model_dump(exclude={"id"})},
+            {"$set": update_data},
             on_insert=doc
         )
         return await Doc.find_one(Doc.uuid == doc.uuid)

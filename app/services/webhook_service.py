@@ -102,6 +102,7 @@ class WebhookService:
             "user_id": user_id,
             "body": data.body,
             "body_html": data.body_html,
+            "created_at": data.created_at, # Ensure created_at is included
             "updated_at": data.updated_at or datetime.utcnow(),
             "content_updated_at": data.content_updated_at,
             "published_at": data.published_at,

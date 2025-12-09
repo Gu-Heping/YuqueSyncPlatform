@@ -4,7 +4,10 @@ from typing import List, Optional, Dict, Any
 from app.services.sync_service import SyncService
 from app.services.rag_service import RAGService
 from app.services.email_service import EmailService
-from app.models.schemas import Doc, Repo, Member, DocSummary
+from app.models.schemas import Doc, Repo, Member, DocSummary, Activity
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -159,3 +162,77 @@ async def send_test_email(to_email: str = Body(..., embed=True)):
         return {"message": f"测试邮件已发送至 {to_email}"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"发送邮件失败: {str(e)}")
+
+async def run_repair_created_at_task():
+    """
+    后台任务：修复文档的 created_at 字段
+    """
+    logger.info("开始修复文档 created_at 字段...")
+    try:
+        # 使用 motor collection 直接操作
+        db_docs = Doc.get_pymongo_collection()
+        db_activities = Activity.get_pymongo_collection()
+        
+        # 查找 created_at 为空的文档
+        cursor = db_docs.find({"created_at": None})
+        docs_to_fix = await cursor.to_list(None)
+        
+        logger.info(f"发现 {len(docs_to_fix)} 个文档缺少 created_at")
+        
+        fixed_count = 0
+        for doc in docs_to_fix:
+            uuid = doc.get("uuid")
+            title = doc.get("title")
+            doc_id = doc.get("_id")
+            
+            # 1. 尝试从 Activity 中查找 'publish' 记录
+            activity = await db_activities.find_one({
+                "doc_uuid": uuid,
+                "action_type": "publish"
+            })
+            
+            # 尝试通过标题查找 (Fallback)
+            if not activity and title:
+                activity = await db_activities.find_one({
+                    "doc_title": title,
+                    "action_type": "publish"
+                })
+                
+            new_created_at = None
+            if activity:
+                new_created_at = activity.get("created_at")
+                logger.info(f"通过 Activity 找到时间: {title} -> {new_created_at}")
+            
+            # 2. 如果没找到 Activity，尝试使用 first_published_at
+            if not new_created_at:
+                new_created_at = doc.get("first_published_at")
+                if new_created_at:
+                    logger.info(f"使用 first_published_at: {title} -> {new_created_at}")
+            
+            # 3. 执行更新
+            if new_created_at:
+                await db_docs.update_one(
+                    {"_id": doc_id},
+                    {"$set": {"created_at": new_created_at}}
+                )
+                fixed_count += 1
+            else:
+                logger.warning(f"无法找到文档创建时间: {title} ({uuid})")
+                
+        logger.info(f"修复完成，共修复 {fixed_count} 个文档")
+        
+    except Exception as e:
+        logger.error(f"修复任务失败: {e}", exc_info=True)
+
+@router.post("/repair/created-at", summary="修复文档创建时间")
+async def trigger_repair_created_at(background_tasks: BackgroundTasks):
+    """
+    触发后台任务，修复文档中缺失的 created_at 字段。
+    逻辑：
+    1. 查找 created_at 为空的文档
+    2. 在 Activity 表中查找对应的 publish 记录
+    3. 或使用 first_published_at 字段
+    4. 更新文档
+    """
+    background_tasks.add_task(run_repair_created_at_task)
+    return {"message": "文档创建时间修复任务已在后台启动，请查看日志关注进度"}
