@@ -32,23 +32,23 @@ const MessageList = ({ comments }) => {
               )}
             </div>
             <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <span className="text-sm font-medium text-gray-900 dark:text-white">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-0">
+                <div className="flex items-center space-x-2 flex-wrap">
+                  <span className="text-sm font-medium text-gray-900 dark:text-white whitespace-nowrap">
                     {comment.user ? comment.user.name : `用户 ${comment.user_id}`}
                   </span>
                   {comment.doc_title && (
-                    <span className="text-xs text-gray-500">
+                    <span className="text-xs text-gray-500 break-all">
                       评论了文档 <Link to={`/repos/${comment.repo_id}/docs/${comment.doc_slug}`} className="text-blue-500 hover:underline">{comment.doc_title}</Link>
                     </span>
                   )}
                 </div>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
+                <p className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
                   {formatDate(comment.created_at, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                 </p>
               </div>
               <div 
-                className="mt-1 text-sm text-gray-700 dark:text-gray-300 prose dark:prose-invert max-w-none"
+                className="mt-1 text-sm text-gray-700 dark:text-gray-300 prose dark:prose-invert max-w-none break-words"
                 dangerouslySetInnerHTML={{ __html: comment.body_html }}
               />
             </div>

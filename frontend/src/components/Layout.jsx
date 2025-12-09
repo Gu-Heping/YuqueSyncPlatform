@@ -94,10 +94,10 @@ const Layout = () => {
             </div>
             
             {/* Right Side Actions */}
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 sm:gap-4">
               <button
                 onClick={() => setIsSearchOpen(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-500 dark:text-gray-300 rounded-lg text-sm transition-colors"
+                className="flex items-center gap-2 p-2 sm:px-4 sm:py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-500 dark:text-gray-300 rounded-lg text-sm transition-colors"
               >
                 <Search className="w-4 h-4" />
                 <span className="hidden sm:inline">搜索文档...</span>
@@ -181,7 +181,7 @@ const Layout = () => {
                 href="https://github.com/Gu-Heping/YuqueSyncPlatform"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="p-2 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
+                className="hidden sm:block p-2 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
                 title="GitHub Repository"
               >
                 <Github className="w-5 h-5" />
