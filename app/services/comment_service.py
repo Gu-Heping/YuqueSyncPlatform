@@ -119,7 +119,8 @@ class CommentService:
         # 暂时使用相对路径，邮件里需要完整路径
         # 假设前端和后端在同一域名下，或者配置了 FRONTEND_URL
         base_url = getattr(settings, "FRONTEND_URL", "http://localhost:3000")
-        doc_url = f"{base_url}/docs/{doc_slug}"
+        repo_id = doc.repo_id if doc else getattr(data, "repo_id", None)
+        doc_url = f"{base_url}/repos/{repo_id}/docs/{doc_slug}" if repo_id else f"{base_url}/docs/{doc_slug}"
 
         # 发送邮件
         background_tasks.add_task(
