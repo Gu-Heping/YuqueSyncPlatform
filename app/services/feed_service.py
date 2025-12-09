@@ -57,25 +57,25 @@ class FeedService:
                     repo_name = payload_data.book.name
 
             # 3. 获取作者信息
-            # 评论事件中，user_id 是评论者
-            user_id = payload_data.user.id if payload_data.user else payload_data.user_id
-            author_name = "未知用户"
-            author_avatar = None
-            
-            # 优先从 payload 获取用户信息 (减少数据库查询)
-            # 修正：优先使用 actor (操作者) 作为动态的 author，因为 user 可能是文档拥有者(可能是团队)
+            # 优先使用 actor (操作者) 作为动态的 author
             if payload_data.actor:
+                author_id = payload_data.actor.id
                 author_name = payload_data.actor.name
                 author_avatar = payload_data.actor.avatar_url
             elif payload_data.user:
+                author_id = payload_data.user.id
                 author_name = payload_data.user.name
                 author_avatar = payload_data.user.avatar_url
             else:
                 # 查库兜底
-                member = await Member.find_one(Member.yuque_id == user_id)
+                author_id = payload_data.user_id
+                member = await Member.find_one(Member.yuque_id == author_id)
                 if member:
                     author_name = member.name
                     author_avatar = member.avatar_url
+                else:
+                    author_name = "未知用户"
+                    author_avatar = None
 
             # 4. 生成摘要 (清洗 HTML)
             summary = ""
@@ -95,7 +95,7 @@ class FeedService:
                 doc_slug=doc_slug or "",
                 repo_id=repo_id,
                 repo_name=repo_name,
-                author_id=user_id,
+                author_id=author_id,
                 author_name=author_name,
                 author_avatar=author_avatar,
                 action_type=action_type,
