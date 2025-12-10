@@ -67,9 +67,9 @@ async def read_users_me(current_user: Member = Depends(get_current_user)):
 async def update_user_me(update_data: UserUpdate, current_user: Member = Depends(get_current_user)):
     if update_data.password:
         current_user.hashed_password = get_password_hash(update_data.password)
-    if update_data.email:
+    # 允许 email 传空字符串或 None 时清空邮箱字段
+    if update_data.email is not None:
         current_user.email = update_data.email
-    
     await current_user.save()
     return current_user
 

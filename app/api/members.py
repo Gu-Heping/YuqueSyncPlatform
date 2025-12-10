@@ -11,7 +11,8 @@ async def count_members_with_email():
     """
     返回所有绑定邮箱的用户数量
     """
-    count = await Member.find({"email": {"$nin": [None, ""]}}).count()
+    members = await Member.find({"email": {"$ne": None}}).to_list()
+    count = sum(1 for m in members if m.email and m.email.strip())
     return {"count": count}
 
 
