@@ -42,6 +42,8 @@ export const getMemberDocs = (userId) => api.get('/docs', { params: { user_id: u
 // Social Features
 export const followMember = (memberId) => api.post(`/members/${memberId}/follow`);
 export const unfollowMember = (memberId) => api.post(`/members/${memberId}/unfollow`);
+export const followAllMembers = () => api.post('/members/follow/all');
+export const unfollowAllMembers = () => api.post('/members/unfollow/all');
 
 // Feed Features
 export const getFeed = (filter = 'all') => api.get('/feed', { params: { filter } });

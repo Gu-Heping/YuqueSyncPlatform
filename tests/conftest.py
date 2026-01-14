@@ -12,6 +12,11 @@ def anyio_backend():
     return 'asyncio'
 
 @pytest.fixture
+def app():
+    from app.main import app
+    return app
+
+@pytest.fixture
 async def mock_db():
     client = AsyncMongoMockClient()
     db = client[settings.MONGO_DB_NAME]

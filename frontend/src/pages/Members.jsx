@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { getMembers, followMember, unfollowMember } from '../api';
-import { Search, User, UserPlus, UserMinus } from 'lucide-react';
+import { getMembers, followMember, unfollowMember, followAllMembers, unfollowAllMembers } from '../api';
+import { Search, User, UserPlus, UserMinus, Users } from 'lucide-react';
 import MemberModal from '../components/MemberModal';
 import { useAuth } from '../context/AuthContext';
 
@@ -9,26 +9,25 @@ const MemberCard = ({ member, currentUser, onFollowToggle, onClick }) => {
   const isSelf = currentUser && currentUser.yuque_id === member.yuque_id;
 
   return (
-    <div 
+    <div
       className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-all group relative"
     >
       <div className="absolute top-4 right-4 z-10">
-         {!isSelf && currentUser && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onFollowToggle(member, isFollowing);
-              }}
-              className={`p-2 rounded-full transition-colors ${
-                isFollowing 
-                  ? 'bg-red-100 text-red-600 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400' 
-                  : 'bg-blue-100 text-blue-600 hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-400'
+        {!isSelf && currentUser && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onFollowToggle(member, isFollowing);
+            }}
+            className={`p-2 rounded-full transition-colors ${isFollowing
+              ? 'bg-red-100 text-red-600 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400'
+              : 'bg-blue-100 text-blue-600 hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-400'
               }`}
-              title={isFollowing ? "取消关注" : "关注"}
-            >
-              {isFollowing ? <UserMinus size={16} /> : <UserPlus size={16} />}
-            </button>
-         )}
+            title={isFollowing ? "取消关注" : "关注"}
+          >
+            {isFollowing ? <UserMinus size={16} /> : <UserPlus size={16} />}
+          </button>
+        )}
       </div>
       <div className="cursor-pointer" onClick={() => onClick(member)}>
         <div className="p-6 flex items-center space-x-4">
@@ -59,6 +58,7 @@ const Members = () => {
   const [members, setMembers] = useState([]);
   const [filteredMembers, setFilteredMembers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState(null); // 'follow' | 'unfollow' | null
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedMember, setSelectedMember] = useState(null);
 
@@ -94,6 +94,48 @@ const Members = () => {
     }
   };
 
+  const handleFollowAll = async () => {
+    console.log('handleFollowAll called');
+    if (!window.confirm("确定要关注所有成员吗？")) {
+      console.log('Follow All cancelled by user');
+      return;
+    }
+
+    try {
+      console.log('Follow All starting');
+      setActionLoading('follow');
+      await followAllMembers();
+      console.log('Follow All success, fetching members');
+      await fetchMembers();
+    } catch (error) {
+      console.error('Failed to follow all members:', error);
+      alert(`操作失败: ${error.message}`);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleUnfollowAll = async () => {
+    console.log('handleUnfollowAll called');
+    if (!window.confirm("确定要取消关注所有成员吗？")) {
+      console.log('Unfollow All cancelled by user');
+      return;
+    }
+
+    try {
+      console.log('Unfollow All starting');
+      setActionLoading('unfollow');
+      await unfollowAllMembers();
+      console.log('Unfollow All success, fetching members');
+      await fetchMembers();
+    } catch (error) {
+      console.error('Failed to unfollow all members:', error);
+      alert(`操作失败: ${error.message}`);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const handleMemberUpdate = (updatedMember) => {
     setMembers(prev => prev.map(m => m.yuque_id === updatedMember.yuque_id ? updatedMember : m));
     if (selectedMember && selectedMember.yuque_id === updatedMember.yuque_id) {
@@ -117,25 +159,57 @@ const Members = () => {
     <div>
       <div className="flex flex-col sm:flex-row justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-4 sm:mb-0">团队成员</h1>
-        <div className="relative w-full sm:w-64">
-          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <Search className="h-5 w-5 text-gray-400 dark:text-gray-500" />
+        <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
+          {user && (
+            <div className="flex w-full sm:w-auto gap-2">
+              <button
+                onClick={handleFollowAll}
+                disabled={actionLoading}
+                className={`flex-1 sm:flex-none flex items-center justify-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors text-sm font-medium shadow-sm whitespace-nowrap ${actionLoading ? 'opacity-70 cursor-not-allowed' : ''
+                  }`}
+              >
+                {actionLoading === 'follow' ? (
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-1 sm:mr-2"></div>
+                ) : (
+                  <Users size={18} className="mr-1 sm:mr-2" />
+                )}
+                <span>一键关注所有</span>
+              </button>
+              <button
+                onClick={handleUnfollowAll}
+                disabled={actionLoading}
+                className={`flex-1 sm:flex-none flex items-center justify-center px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-md transition-colors text-sm font-medium shadow-sm whitespace-nowrap ${actionLoading ? 'opacity-70 cursor-not-allowed' : ''
+                  }`}
+              >
+                {actionLoading === 'unfollow' ? (
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-1 sm:mr-2"></div>
+                ) : (
+                  <UserMinus size={18} className="mr-1 sm:mr-2" />
+                )}
+                <span>一键取消关注</span>
+              </button>
+            </div>
+          )}
+          <div className="relative w-full sm:w-64">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <Search className="h-5 w-5 text-gray-400 dark:text-gray-500" />
+            </div>
+            <input
+              type="text"
+              className="block w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md leading-5 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+              placeholder="搜索成员..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
           </div>
-          <input
-            type="text"
-            className="block w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md leading-5 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-            placeholder="搜索成员..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
         </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredMembers.map((member) => (
-          <MemberCard 
-            key={member.yuque_id} 
-            member={member} 
+          <MemberCard
+            key={member.yuque_id}
+            member={member}
             currentUser={user}
             onFollowToggle={handleFollowToggle}
             onClick={setSelectedMember}
@@ -143,23 +217,27 @@ const Members = () => {
         ))}
       </div>
 
-      {filteredMembers.length === 0 && (
-        <div className="text-center py-12">
-          <User className="mx-auto h-12 w-12 text-gray-400 dark:text-gray-600" />
-          <h3 className="mt-2 text-sm font-medium text-gray-900 dark:text-white">未找到成员</h3>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">请尝试调整搜索关键词</p>
-        </div>
-      )}
+      {
+        filteredMembers.length === 0 && (
+          <div className="text-center py-12">
+            <User className="mx-auto h-12 w-12 text-gray-400 dark:text-gray-600" />
+            <h3 className="mt-2 text-sm font-medium text-gray-900 dark:text-white">未找到成员</h3>
+            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">请尝试调整搜索关键词</p>
+          </div>
+        )
+      }
 
       {/* Modal */}
-      {selectedMember && (
-        <MemberModal 
-          member={selectedMember} 
-          onClose={() => setSelectedMember(null)} 
-          onUpdate={handleMemberUpdate}
-        />
-      )}
-    </div>
+      {
+        selectedMember && (
+          <MemberModal
+            member={selectedMember}
+            onClose={() => setSelectedMember(null)}
+            onUpdate={handleMemberUpdate}
+          />
+        )
+      }
+    </div >
   );
 };
 
