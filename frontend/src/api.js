@@ -46,7 +46,7 @@ export const followAllMembers = (repoId) => api.post('/members/follow/all', null
 export const unfollowAllMembers = (repoId) => api.post('/members/unfollow/all', null, { params: repoId ? { repo_id: repoId } : {} });
 
 // Feed Features
-export const getFeed = (filter = 'all', repoId = null) => api.get('/feed', { params: { filter, repo_id: repoId } });
+export const getFeed = (filter = 'all', repoId = null) => api.get('/feed/', { params: { filter, repo_id: repoId } });
 export const checkFeedStatus = () => api.get('/feed/status');
 export const markFeedRead = () => api.post('/feed/read');
 
