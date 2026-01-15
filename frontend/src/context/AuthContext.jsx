@@ -1,5 +1,4 @@
-import React, { createContext, useState, useEffect, useContext } from 'react';
-import axios from 'axios';
+import api from '../api';
 
 const AuthContext = createContext(null);
 
@@ -10,21 +9,22 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (token) {
-      fetchUser(token);
+      fetchUser();
     } else {
       setLoading(false);
     }
   }, []);
 
-  const fetchUser = async (token) => {
+  const fetchUser = async () => {
     try {
-      const response = await axios.get('/api/v1/auth/users/me', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const response = await api.get('/auth/users/me');
       setUser(response.data);
     } catch (error) {
       console.error("Failed to fetch user", error);
-      localStorage.removeItem('token');
+      // Only clear token if 401 (handled by api interceptor mostly, but safe to keep logic)
+      if (error.response?.status === 401) {
+        localStorage.removeItem('token');
+      }
     } finally {
       setLoading(false);
     }
@@ -35,24 +35,22 @@ export const AuthProvider = ({ children }) => {
     formData.append('username', username);
     formData.append('password', password);
 
-    const response = await axios.post('/api/v1/auth/login', formData);
+    const response = await api.post('/auth/login', formData);
     const { access_token } = response.data;
-    
+
     localStorage.setItem('token', access_token);
-    await fetchUser(access_token);
+    await fetchUser();
     return true;
   };
 
   const logout = () => {
     localStorage.removeItem('token');
     setUser(null);
+    // Optional: Redirect to login is handled by components or router
   };
 
   const updateProfile = async (data) => {
-    const token = localStorage.getItem('token');
-    const response = await axios.put('/api/v1/auth/users/me', data, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
+    const response = await api.put('/auth/users/me', data);
     setUser(response.data);
     return response.data;
   };
