@@ -29,18 +29,28 @@ const RepoOverview = ({ repo, onEnterDocs, onMemberClick }) => {
 
     useEffect(() => {
         const fetchData = async () => {
+            // Fetch Members
             try {
-                const [membersRes, feedRes, statsRes] = await Promise.all([
-                    getMembers({ repo_id: repo.yuque_id }),
-                    getFeed('all', repo.yuque_id),
-                    getDashboardOverview(repo.yuque_id)
-                ]);
-
+                const membersRes = await getMembers({ repo_id: repo.yuque_id });
                 setContributors(membersRes.data);
-                setActivities(feedRes.data);
+            } catch (error) {
+                console.error('Failed to fetch members:', error);
+            }
+
+            // Fetch Stats (Dashboard)
+            try {
+                const statsRes = await getDashboardOverview(repo.yuque_id);
                 setStats(statsRes.data);
             } catch (error) {
-                console.error('Failed to fetch repo overview data:', error);
+                console.error('Failed to fetch repo stats:', error);
+            }
+
+            // Fetch Feed (Activity)
+            try {
+                const feedRes = await getFeed('all', repo.yuque_id);
+                setActivities(feedRes.data);
+            } catch (error) {
+                console.error('Failed to fetch activity feed:', error);
             }
         };
 
