@@ -121,3 +121,38 @@ async def migrate_credentials(
         "updated_count": count,
         "total_scanned": len(users)
     }
+
+class UserSearchResult(BaseModel):
+    name: str
+    login: str
+    avatar_url: Optional[str] = None
+
+@router.get("/users/search", response_model=list[UserSearchResult], summary="公开搜索用户(用于登录联想)")
+async def search_users_public(q: str = Query(..., min_length=1, max_length=50)):
+    """
+    公开的用户搜索接口，用于登录页面的自动联想。
+    支持按 name 或 login 模糊匹配 (不区分大小写)。
+    最多返回 10 条结果。
+    """
+    # 构造正则表达式进行模糊匹配
+    regex_pattern = {"$regex": q, "$options": "i"}
+    query = {
+        "$or": [
+            {"name": regex_pattern},
+            {"login": regex_pattern}
+        ]
+    }
+    
+    # 查找并限制返回数量
+    members = await Member.find(query).limit(10).to_list()
+    
+    # 转换为结果模型
+    results = []
+    for m in members:
+        results.append(UserSearchResult(
+            name=m.name,
+            login=m.login,
+            avatar_url=m.avatar_url
+        ))
+        
+    return results

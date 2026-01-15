@@ -60,6 +60,9 @@ export const searchDocs = (query) => api.post('/search', { query });
 export const askAI = (query) => api.post('/chat/rag', { query });
 export const explainDoc = (text) => api.post('/ai/explain', { text });
 
+// User Features (Public)
+export const searchUsers = (q) => api.get('/auth/users/search', { params: { q } });
+
 // Comment Features
 export const getComments = (params) => api.get('/comments', { params });
 export const checkCommentStatus = () => api.get('/comments/status');
