@@ -77,10 +77,21 @@ async def get_repos():
     return await Repo.find_all().to_list()
 
 @router.get("/members", response_model=List[Member], summary="获取成员列表")
-async def get_members():
+async def get_members(repo_id: Optional[int] = None):
     """
-    获取所有已同步的成员
+    获取所有已同步的成员，可按知识库筛选
     """
+    if repo_id:
+        # 如果指定了 repo_id，先从文档中查找贡献者 ID
+        # 使用 pymongo 直接查询 distinct user_id
+        db_docs = Doc.get_pymongo_collection()
+        contributor_ids = await db_docs.distinct("user_id", {"repo_id": repo_id})
+        
+        if not contributor_ids:
+            return []
+            
+        return await Member.find({"yuque_id": {"$in": contributor_ids}}).to_list()
+        
     return await Member.find_all().to_list()
 
 @router.get("/docs", response_model=List[DocSummary], summary="获取文档列表")

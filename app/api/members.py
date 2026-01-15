@@ -57,15 +57,28 @@ async def unfollow_member(target_yuque_id: int, current_user: Member = Depends(g
     return {"message": "Not following"}
 
 @router.post("/follow/all", summary="一键关注所有成员")
-async def follow_all_members(current_user: Member = Depends(get_current_user)):
+async def follow_all_members(repo_id: int = Query(None), current_user: Member = Depends(get_current_user)):
     """
-    当前用户一键关注所有其他用户
+    当前用户一键关注所有其他用户 (支持按知识库筛选)
     """
-    # 查找所有用户（排除自己）
-    all_members = await Member.find(Member.yuque_id != current_user.yuque_id).to_list()
+    query = {"yuque_id": {"$ne": current_user.yuque_id}}
+    
+    if repo_id:
+        from app.models.schemas import Doc
+        # 查找该知识库下的贡献者
+        db_docs = Doc.get_pymongo_collection()
+        contributor_ids = await db_docs.distinct("user_id", {"repo_id": repo_id})
+        if not contributor_ids:
+             return {"message": "No members found for this repo", "count": 0}
+        
+        # 增加 ID 过滤条件
+        query["yuque_id"] = {"$in": contributor_ids}
+
+    # 查找符合条件的用户
+    target_members = await Member.find(query).to_list()
     
     count = 0
-    for member in all_members:
+    for member in target_members:
         # 使用 atomic update $addToSet 防止重复
         # 直接使用 Motor collection 的 update_one 以获取准确的 modified_count
         result = await Member.get_pymongo_collection().update_one(
@@ -76,17 +89,29 @@ async def follow_all_members(current_user: Member = Depends(get_current_user)):
         if result.modified_count > 0:
             count += 1
             
-            
     return {"message": f"Successfully followed {count} new members", "count": count}
 
 @router.post("/unfollow/all", summary="一键取消关注所有成员")
-async def unfollow_all_members(current_user: Member = Depends(get_current_user)):
+async def unfollow_all_members(repo_id: int = Query(None), current_user: Member = Depends(get_current_user)):
     """
-    当前用户一键取消关注所有其他用户
+    当前用户一键取消关注所有其他用户 (支持按知识库筛选)
     """
-    # 查找所有被当前用户关注的用户
-    # 优化：只查找 followers 包含当前用户 ID 的成员
-    followed_members = await Member.find({"followers": current_user.yuque_id}).to_list()
+    # 基础查询：被当前用户关注的用户
+    query = {"followers": current_user.yuque_id}
+    
+    if repo_id:
+        from app.models.schemas import Doc
+        # 查找该知识库下的贡献者
+        db_docs = Doc.get_pymongo_collection()
+        contributor_ids = await db_docs.distinct("user_id", {"repo_id": repo_id})
+        if not contributor_ids:
+             return {"message": "No members found for this repo", "count": 0}
+        
+        # 增加 ID 过滤条件 (必须在贡献者列表中)
+        query["yuque_id"] = {"$in": contributor_ids}
+
+    # 查找符合条件的用户
+    followed_members = await Member.find(query).to_list()
     
     count = 0
     for member in followed_members:

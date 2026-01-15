@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
-  AreaChart, Area, Legend 
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  AreaChart, Area, Legend
 } from 'recharts';
-import { 
-  FileText, Users, BookOpen, Heart, TrendingUp, Award, 
-  Activity, Calendar 
+import {
+  FileText, Users, BookOpen, Heart, TrendingUp, Award,
+  Activity, Calendar
 } from 'lucide-react';
-import { getDashboardOverview, getDashboardTrends, getDashboardRankings } from '../api';
+import { getDashboardOverview, getDashboardTrends, getDashboardRankings, getRepos } from '../api';
 import { format, parseISO } from 'date-fns';
 
 const StatCard = ({ title, value, icon: Icon, color }) => (
@@ -36,15 +36,15 @@ const RankingList = ({ title, data, icon: Icon, valueLabel }) => (
           <div className="flex items-center flex-1 min-w-0">
             <span className={`
               w-6 h-6 flex items-center justify-center rounded-full text-xs font-bold mr-3 shrink-0
-              ${index < 3 
-                ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' 
+              ${index < 3
+                ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
                 : 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400'}
             `}>
               {index + 1}
             </span>
-            <img 
-              src={item.avatar_url} 
-              alt={item.name} 
+            <img
+              src={item.avatar_url}
+              alt={item.name}
               className="w-8 h-8 rounded-full mr-3 border border-gray-200 dark:border-gray-700"
             />
             <span className="text-sm font-medium text-gray-700 dark:text-gray-200 truncate group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
@@ -52,9 +52,9 @@ const RankingList = ({ title, data, icon: Icon, valueLabel }) => (
             </span>
           </div>
           <span className="text-sm font-semibold text-gray-900 dark:text-white ml-2 shrink-0">
-            {typeof item.value === 'number' && item.value > 10000 
-              ? `${(item.value / 10000).toFixed(1)}w` 
-              : item.value} 
+            {typeof item.value === 'number' && item.value > 10000
+              ? `${(item.value / 10000).toFixed(1)}w`
+              : item.value}
             <span className="text-xs text-gray-400 font-normal ml-1">{valueLabel}</span>
           </span>
         </div>
@@ -72,15 +72,36 @@ const DashboardPage = () => {
   const [rankings, setRankings] = useState({ word_rank: [], likes_rank: [], read_rank: [] });
   const [loading, setLoading] = useState(true);
 
+  // Repo Filter
+  const [repos, setRepos] = useState([]);
+  const [selectedRepoId, setSelectedRepoId] = useState('');
+
+  // Fetch Repos List
+  useEffect(() => {
+    const fetchRepos = async () => {
+      try {
+        const response = await getRepos();
+        setRepos(response.data);
+      } catch (error) {
+        console.error("Failed to fetch repos", error);
+      }
+    };
+    fetchRepos();
+  }, []);
+
+  // Fetch Dashboard Data (depends on selectedRepoId)
   useEffect(() => {
     const fetchData = async () => {
       try {
+        setLoading(true);
+        const repoParam = selectedRepoId || null;
+
         const [overviewRes, trendsRes, rankingsRes] = await Promise.all([
-          getDashboardOverview(),
-          getDashboardTrends(30),
-          getDashboardRankings()
+          getDashboardOverview(repoParam),
+          getDashboardTrends(30, repoParam),
+          getDashboardRankings(repoParam)
         ]);
-        
+
         setOverview(overviewRes.data);
         setTrends(trendsRes.data);
         setRankings(rankingsRes.data);
@@ -91,9 +112,9 @@ const DashboardPage = () => {
       }
     };
     fetchData();
-  }, []);
+  }, [selectedRepoId]);
 
-  if (loading) {
+  if (loading && !overview) { // Only show full loader on initial load
     return (
       <div className="flex justify-center items-center h-96">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
@@ -103,38 +124,51 @@ const DashboardPage = () => {
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">数据看板</h1>
-        <span className="text-sm text-gray-500 dark:text-gray-400">
-          数据更新于 {format(new Date(), 'yyyy-MM-dd HH:mm')}
-        </span>
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">数据看板</h1>
+          <span className="text-sm text-gray-500 dark:text-gray-400">
+            数据更新于 {format(new Date(), 'yyyy-MM-dd HH:mm')}
+          </span>
+        </div>
+
+        <select
+          value={selectedRepoId}
+          onChange={(e) => setSelectedRepoId(e.target.value)}
+          className="block w-full sm:w-64 py-2 px-3 border border-gray-300 bg-white dark:bg-gray-800 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:text-gray-200 dark:border-gray-600"
+        >
+          <option value="">全部知识库</option>
+          {repos.map(r => (
+            <option key={r.yuque_id} value={r.yuque_id}>{r.name}</option>
+          ))}
+        </select>
       </div>
 
       {/* Overview Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard 
-          title="文档总数" 
-          value={overview?.total_docs || 0} 
-          icon={FileText} 
-          color="bg-blue-500" 
+        <StatCard
+          title="文档总数"
+          value={overview?.total_docs || 0}
+          icon={FileText}
+          color="bg-blue-500"
         />
-        <StatCard 
-          title="累计字数" 
-          value={overview?.total_words ? `${(overview.total_words / 10000).toFixed(1)}w` : 0} 
-          icon={BookOpen} 
-          color="bg-green-500" 
+        <StatCard
+          title="累计字数"
+          value={overview?.total_words ? `${(overview.total_words / 10000).toFixed(1)}w` : 0}
+          icon={BookOpen}
+          color="bg-green-500"
         />
-        <StatCard 
-          title="总阅读量" 
-          value={overview?.total_reads || 0} 
-          icon={Users} 
-          color="bg-purple-500" 
+        <StatCard
+          title="总阅读量"
+          value={overview?.total_reads || 0}
+          icon={Users}
+          color="bg-purple-500"
         />
-        <StatCard 
-          title="今日活跃用户" 
-          value={overview?.today_active_users || 0} 
-          icon={Activity} 
-          color="bg-orange-500" 
+        <StatCard
+          title="今日活跃用户"
+          value={overview?.today_active_users || 0}
+          icon={Activity}
+          color="bg-orange-500"
         />
       </div>
 
@@ -151,55 +185,55 @@ const DashboardPage = () => {
             <AreaChart data={trends} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
               <defs>
                 <linearGradient id="colorDocs" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.8}/>
-                  <stop offset="95%" stopColor="#3B82F6" stopOpacity={0}/>
+                  <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.8} />
+                  <stop offset="95%" stopColor="#3B82F6" stopOpacity={0} />
                 </linearGradient>
                 <linearGradient id="colorUsers" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#10B981" stopOpacity={0.8}/>
-                  <stop offset="95%" stopColor="#10B981" stopOpacity={0}/>
+                  <stop offset="5%" stopColor="#10B981" stopOpacity={0.8} />
+                  <stop offset="95%" stopColor="#10B981" stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <XAxis 
-                dataKey="date" 
+              <XAxis
+                dataKey="date"
                 tickFormatter={(str) => format(parseISO(str), 'MM-dd')}
                 stroke="#9CA3AF"
                 fontSize={12}
                 tickLine={false}
                 axisLine={false}
               />
-              <YAxis 
+              <YAxis
                 stroke="#9CA3AF"
                 fontSize={12}
                 tickLine={false}
                 axisLine={false}
               />
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" className="dark:stroke-gray-700" />
-              <Tooltip 
-                contentStyle={{ 
-                  backgroundColor: 'rgba(255, 255, 255, 0.9)', 
-                  borderRadius: '8px', 
-                  border: 'none', 
-                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' 
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                  borderRadius: '8px',
+                  border: 'none',
+                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
                 }}
                 labelStyle={{ color: '#374151', fontWeight: 'bold', marginBottom: '4px' }}
               />
               <Legend iconType="circle" />
-              <Area 
-                type="monotone" 
-                dataKey="new_docs" 
-                name="新增文档" 
-                stroke="#3B82F6" 
-                fillOpacity={1} 
-                fill="url(#colorDocs)" 
+              <Area
+                type="monotone"
+                dataKey="new_docs"
+                name="新增文档"
+                stroke="#3B82F6"
+                fillOpacity={1}
+                fill="url(#colorDocs)"
                 strokeWidth={2}
               />
-              <Area 
-                type="monotone" 
-                dataKey="active_users" 
-                name="活跃人数" 
-                stroke="#10B981" 
-                fillOpacity={1} 
-                fill="url(#colorUsers)" 
+              <Area
+                type="monotone"
+                dataKey="active_users"
+                name="活跃人数"
+                stroke="#10B981"
+                fillOpacity={1}
+                fill="url(#colorUsers)"
                 strokeWidth={2}
               />
             </AreaChart>
@@ -209,22 +243,22 @@ const DashboardPage = () => {
 
       {/* Rankings Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <RankingList 
-          title="笔耕不辍榜" 
-          data={rankings.word_rank} 
-          icon={Award} 
+        <RankingList
+          title="笔耕不辍榜"
+          data={rankings.word_rank}
+          icon={Award}
           valueLabel="字"
         />
-        <RankingList 
-          title="人气之星榜" 
-          data={rankings.likes_rank} 
-          icon={Heart} 
+        <RankingList
+          title="人气之星榜"
+          data={rankings.likes_rank}
+          icon={Heart}
           valueLabel="赞"
         />
-        <RankingList 
-          title="知识传播榜" 
-          data={rankings.read_rank} 
-          icon={BookOpen} 
+        <RankingList
+          title="知识传播榜"
+          data={rankings.read_rank}
+          icon={BookOpen}
           valueLabel="阅"
         />
       </div>

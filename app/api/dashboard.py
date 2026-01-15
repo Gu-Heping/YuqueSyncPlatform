@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 from app.models.schemas import Doc, Activity, Member
 from app.api.auth import get_current_user
@@ -12,26 +12,37 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 @router.get("/overview")
-async def get_dashboard_overview(current_user: Member = Depends(get_current_user)):
+async def get_dashboard_overview(
+    repo_id: Optional[int] = None,
+    current_user: Member = Depends(get_current_user)
+):
     """
     获取全局概览数据
     """
     # 使用 motor collection 直接操作，绕过 Beanie 可能存在的聚合转换问题
     db_docs = Doc.get_pymongo_collection()
     db_activities = Activity.get_pymongo_collection()
+    
+    # 基础过滤条件
+    doc_filter = {}
+    activity_filter = {}
+    
+    if repo_id:
+        doc_filter["repo_id"] = repo_id
+        activity_filter["repo_id"] = repo_id
 
     # Debug: Check counts
-    doc_count = await db_docs.count_documents({})
-    activity_count = await db_activities.count_documents({})
+    doc_count = await db_docs.count_documents(doc_filter)
+    activity_count = await db_activities.count_documents(activity_filter)
     
     # 获取数据库信息用于调试
     db_name = db_docs.database.name
     collection_name = db_docs.name
     
-    logger.info(f"Dashboard Overview Debug: DB={db_name}, Coll={collection_name}, Doc count: {doc_count}, Activity count: {activity_count}")
+    logger.info(f"Dashboard Overview Debug: DB={db_name}, Coll={collection_name}, Doc count: {doc_count}, Activity count: {activity_count}, RepoID={repo_id}")
 
     # 如果数据为0，尝试列出所有集合，帮助排查是否连错了库
-    if doc_count == 0:
+    if doc_count == 0 and not repo_id: # 只有在未筛选的情况下才进行此检查
         try:
             collection_names = await db_docs.database.list_collection_names()
             logger.warning(f"Docs collection is empty. Available collections in {db_name}: {collection_names}")
@@ -43,7 +54,13 @@ async def get_dashboard_overview(current_user: Member = Depends(get_current_user
             logger.error(f"Failed to list collections: {e}")
 
     # 1. 文档统计 (Doc)
-    doc_pipeline = [
+    doc_match_stage = {"$match": doc_filter} if doc_filter else None
+    
+    doc_pipeline = []
+    if doc_filter:
+        doc_pipeline.append(doc_match_stage)
+        
+    doc_pipeline.append(
         {
             "$group": {
                 "_id": None,
@@ -53,7 +70,7 @@ async def get_dashboard_overview(current_user: Member = Depends(get_current_user
                 "total_likes": {"$sum": "$likes_count"}
             }
         }
-    ]
+    )
     
     # 2. 今日活跃用户 (Activity)
     now = datetime.utcnow()
@@ -63,7 +80,7 @@ async def get_dashboard_overview(current_user: Member = Depends(get_current_user
     doc_stats_cursor = db_docs.aggregate(doc_pipeline)
     doc_stats_list = await doc_stats_cursor.to_list(length=1)
     
-    today_active_users = await db_activities.distinct("author_id", {"created_at": {"$gte": today_start}})
+    today_active_users = await db_activities.distinct("author_id", {"created_at": {"$gte": today_start}, **activity_filter})
     
     logger.info(f"Dashboard Overview Results: DocStats={doc_stats_list}, ActiveUsers={len(today_active_users)}")
 
@@ -101,19 +118,27 @@ async def get_dashboard_overview(current_user: Member = Depends(get_current_user
     return response_data
 
 @router.get("/trends")
-async def get_dashboard_trends(days: int = 30, current_user: Member = Depends(get_current_user)):
+async def get_dashboard_trends(
+    days: int = 30, 
+    repo_id: Optional[int] = None,
+    current_user: Member = Depends(get_current_user)
+):
     """
     获取最近 30 天的趋势数据 (新增文档 & 活跃人数)
     """
     end_date = datetime.utcnow()
     start_date = end_date - timedelta(days=days)
     
+    match_filter = {
+        "created_at": {"$gte": start_date}
+    }
+    if repo_id:
+        match_filter["repo_id"] = repo_id
+    
     # 1. 每日新增文档 (Doc created_at)
     doc_trend_pipeline = [
         {
-            "$match": {
-                "created_at": {"$gte": start_date}
-            }
+            "$match": match_filter
         },
         {
             "$group": {
@@ -129,9 +154,7 @@ async def get_dashboard_trends(days: int = 30, current_user: Member = Depends(ge
     # MongoDB 聚合去重计数比较麻烦，通常用 $addToSet 然后 $size
     activity_trend_pipeline = [
         {
-            "$match": {
-                "created_at": {"$gte": start_date}
-            }
+            "$match": match_filter
         },
         {
             "$group": {
@@ -174,32 +197,34 @@ async def get_dashboard_trends(days: int = 30, current_user: Member = Depends(ge
     return final_data
 
 @router.get("/rankings")
-async def get_dashboard_rankings(current_user: Member = Depends(get_current_user)):
+async def get_dashboard_rankings(
+    repo_id: Optional[int] = None,
+    current_user: Member = Depends(get_current_user)
+):
     """
     获取排行榜数据 (Top 10)
     """
     limit = 10
     
+    match_stage = {"$match": {"repo_id": repo_id}} if repo_id else None
+    
+    def build_pipeline(group_field):
+        pipeline = []
+        if match_stage:
+            pipeline.append(match_stage)
+        pipeline.append({"$group": {"_id": "$user_id", "value": {"$sum": group_field}}})
+        pipeline.append({"$sort": {"value": -1}})
+        pipeline.append({"$limit": limit})
+        return pipeline
+    
     # 1. 笔耕不辍榜 (Word Count)
-    word_pipeline = [
-        {"$group": {"_id": "$user_id", "value": {"$sum": "$word_count"}}},
-        {"$sort": {"value": -1}},
-        {"$limit": limit}
-    ]
+    word_pipeline = build_pipeline("$word_count")
     
     # 2. 人气之星榜 (Likes)
-    likes_pipeline = [
-        {"$group": {"_id": "$user_id", "value": {"$sum": "$likes_count"}}},
-        {"$sort": {"value": -1}},
-        {"$limit": limit}
-    ]
+    likes_pipeline = build_pipeline("$likes_count")
     
     # 3. 知识传播榜 (Reads)
-    reads_pipeline = [
-        {"$group": {"_id": "$user_id", "value": {"$sum": "$read_count"}}},
-        {"$sort": {"value": -1}},
-        {"$limit": limit}
-    ]
+    reads_pipeline = build_pipeline("$read_count")
     
     # 使用 motor collection 直接操作
     db_docs = Doc.get_pymongo_collection()

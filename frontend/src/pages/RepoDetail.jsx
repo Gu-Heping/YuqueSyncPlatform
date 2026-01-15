@@ -50,9 +50,8 @@ const TreeNode = ({ node, onSelect, selectedSlug, level = 0 }) => {
   return (
     <div className="select-none">
       <div
-        className={`flex items-center py-1.5 px-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors ${
-          isSelected ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'
-        }`}
+        className={`flex items-center py-1.5 px-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors ${isSelected ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'
+          }`}
         style={{ paddingLeft: `${level * 12 + 8}px` }}
         onClick={handleClick}
       >
@@ -92,12 +91,12 @@ const TableOfContents = ({ toc, activeId, onSelect }) => {
     <div className="h-full overflow-y-auto">
       <ul className="space-y-1 text-sm">
         {toc.map((item) => (
-          <li 
+          <li
             key={item.id}
             className={`
               pl-2 border-l-2 transition-colors cursor-pointer py-1
-              ${activeId === item.id 
-                ? 'border-blue-500 text-blue-600 dark:text-blue-400 font-medium bg-blue-50 dark:bg-blue-900/20' 
+              ${activeId === item.id
+                ? 'border-blue-500 text-blue-600 dark:text-blue-400 font-medium bg-blue-50 dark:bg-blue-900/20'
                 : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:border-gray-300'}
             `}
             style={{ marginLeft: `${(item.level - 1) * 12}px` }}
@@ -113,6 +112,8 @@ const TableOfContents = ({ toc, activeId, onSelect }) => {
   );
 };
 
+import RepoOverview from '../components/RepoOverview';
+
 const RepoDetail = () => {
   const { repoId, docSlug } = useParams();
   const navigate = useNavigate();
@@ -121,6 +122,11 @@ const RepoDetail = () => {
   const [selectedDoc, setSelectedDoc] = useState(null);
   const [previewImage, setPreviewImage] = useState(null);
   const markdownRef = useRef(null);
+
+  // Overview Mode State
+  // If docSlug is present, we start in Docs mode (showOverview = false)
+  // otherwise we start in Overview mode
+  const [showOverview, setShowOverview] = useState(!docSlug);
 
   useEffect(() => {
     if (selectedDoc && markdownRef.current) {
@@ -136,7 +142,7 @@ const RepoDetail = () => {
   const [members, setMembers] = useState([]);
   const [selectedMember, setSelectedMember] = useState(null);
   const [repoInfo, setRepoInfo] = useState(null);
-  
+
   // Sidebar Pin State
   const [leftPinned, setLeftPinned] = useState(true);
   const [rightPinned, setRightPinned] = useState(true);
@@ -176,6 +182,7 @@ const RepoDetail = () => {
   useEffect(() => {
     const fetchDocs = async () => {
       try {
+        setLoading(true);
         const response = await getRepoDocs(repoId);
         const docs = response.data;
         setFlatDocs(docs);
@@ -192,25 +199,31 @@ const RepoDetail = () => {
 
   // Auto-select doc based on URL slug
   useEffect(() => {
-    if (docSlug && flatDocs.length > 0) {
-      if (selectedDoc?.slug === docSlug) return;
-      
-      const targetDoc = flatDocs.find(d => d.slug === docSlug);
-      if (targetDoc) {
-        fetchDocDetail(targetDoc.slug);
+    if (docSlug) {
+      setShowOverview(false);
+      if (flatDocs.length > 0) {
+        if (selectedDoc?.slug === docSlug) return;
+
+        const targetDoc = flatDocs.find(d => d.slug === docSlug);
+        if (targetDoc) {
+          fetchDocDetail(targetDoc.slug);
+        }
       }
+    } else {
+      setShowOverview(true);
+      setSelectedDoc(null);
     }
   }, [docSlug, flatDocs]);
 
   // Parse TOC from content
   useEffect(() => {
     if (!selectedDoc) return;
-    
+
     // Wait for DOM to update
     const timer = setTimeout(() => {
       const content = document.querySelector('.markdown-body');
       if (!content) return;
-      
+
       const headers = content.querySelectorAll('h1, h2, h3, h4, h5, h6');
       const tocData = Array.from(headers)
         .filter(header => {
@@ -218,19 +231,19 @@ const RepoDetail = () => {
           const inDetails = header.closest('details');
           const inSummary = header.closest('summary');
           if (inDetails && !inSummary) return false;
-          
+
           // Ignore empty headers
           return header.innerText.trim().length > 0;
         })
         .map((header, index) => {
-        const id = header.id || `heading-${index}`;
-        header.id = id; // Ensure ID exists
-        return {
-          id,
-          text: header.innerText,
-          level: parseInt(header.tagName.substring(1)),
-        };
-      });
+          const id = header.id || `heading-${index}`;
+          header.id = id; // Ensure ID exists
+          return {
+            id,
+            text: header.innerText,
+            level: parseInt(header.tagName.substring(1)),
+          };
+        });
       setToc(tocData);
     }, 100);
 
@@ -299,7 +312,7 @@ const RepoDetail = () => {
     // Simple sort by prev_uuid (Linked List Sort)
     const sortNodes = (nodes) => {
       if (!nodes || nodes.length === 0) return [];
-      return nodes; 
+      return nodes;
     };
 
     return roots;
@@ -314,6 +327,18 @@ const RepoDetail = () => {
     if (node.slug === selectedDoc?.slug) return;
     navigate(`/repos/${repoId}/docs/${node.slug}`);
     setIsSidebarOpen(false);
+    setShowOverview(false);
+  };
+
+  const handleEnterDocs = () => {
+    // If there are docs, select the first one, or just show the sidebar state
+    // Just switching to 'docs' mode without a specific doc selected shows the "Please select a doc" placeholder
+    // If we want a better UX, we could auto-select the first doc.
+    setShowOverview(false);
+    // Optional: Auto-select first doc
+    // if (treeData.length > 0) {
+    //   handleSelectDoc(treeData[0]);
+    // }
   };
 
   const handleMemberUpdate = (updatedMember) => {
@@ -331,74 +356,45 @@ const RepoDetail = () => {
 
   return (
     <div className="flex h-[calc(100vh-8rem)] bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden relative border border-gray-200 dark:border-gray-700">
-      {/* Mobile Sidebar Overlay */}
-      {isSidebarOpen && (
-        <div 
-          className="fixed inset-0 bg-black/50 z-40 md:hidden"
-          onClick={() => setIsSidebarOpen(false)}
+      {showOverview && repoInfo ? (
+        <RepoOverview
+          repo={repoInfo}
+          onEnterDocs={handleEnterDocs}
+          onMemberClick={setSelectedMember}
         />
-      )}
+      ) : (
+        <>
+          {/* Mobile Sidebar Overlay */}
+          {isSidebarOpen && (
+            <div
+              className="fixed inset-0 bg-black/50 z-40 md:hidden"
+              onClick={() => setIsSidebarOpen(false)}
+            />
+          )}
 
-      {/* Mobile TOC Overlay */}
-      {isTocOpen && (
-        <div 
-          className="fixed inset-0 bg-black/50 z-40 xl:hidden"
-          onClick={() => setIsTocOpen(false)}
-        />
-      )}
+          {/* Mobile TOC Overlay */}
+          {isTocOpen && (
+            <div
+              className="fixed inset-0 bg-black/50 z-40 xl:hidden"
+              onClick={() => setIsTocOpen(false)}
+            />
+          )}
 
-      {/* Mobile Sidebar (Doc Tree) */}
-      <div className={`
+          {/* Mobile Sidebar (Doc Tree) */}
+          <div className={`
         fixed inset-y-0 left-0 z-50 w-80 bg-gray-50 dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 transform transition-transform duration-300 ease-in-out md:hidden
         ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
-        <div className="h-full overflow-y-auto p-4">
-          <div className="flex items-center justify-between mb-4 px-2">
-            <h3 className="font-bold text-gray-700 dark:text-gray-200">文档目录</h3>
-            <button 
-              onClick={() => setIsSidebarOpen(false)}
-              className="p-1 text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
-            >
-              <X size={20} />
-            </button>
-          </div>
-          {treeData.map((node) => (
-            <TreeNode
-              key={node.uuid}
-              node={node}
-              onSelect={handleSelectDoc}
-              selectedSlug={selectedDoc?.slug}
-            />
-          ))}
-        </div>
-      </div>
-
-      {/* Desktop Left Sidebar */}
-      <div 
-        className={`hidden md:block relative z-20 transition-all duration-300 ${leftPinned ? 'w-80' : 'w-8'}`}
-        onMouseEnter={() => setLeftHovered(true)}
-        onMouseLeave={() => setLeftHovered(false)}
-      >
-        <div className={`
-          h-full bg-gray-50 dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700
-          transition-transform duration-300 ease-in-out
-          absolute top-0 left-0 w-80 shadow-xl
-          ${leftPinned ? 'translate-x-0' : (leftHovered ? 'translate-x-0' : '-translate-x-[calc(100%-2rem)]')}
-        `}>
-          <div className="h-full flex flex-col">
-            <div className="flex items-center justify-between px-2 border-b border-gray-200 dark:border-gray-700 shrink-0 h-14">
-              <h3 className={`font-bold text-gray-700 dark:text-gray-200 transition-opacity duration-200 ${!leftPinned && !leftHovered ? 'opacity-0' : 'opacity-100'}`}>
-                文档目录
-              </h3>
-              <button 
-                onClick={() => setLeftPinned(!leftPinned)}
-                className="p-1 text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
-                title={leftPinned ? "取消固定" : "固定侧边栏"}
-              >
-                {leftPinned ? <PinOff size={16} /> : <Pin size={16} className="fill-current" />}
-              </button>
-            </div>
-            <div className={`flex-1 overflow-y-auto p-4 transition-opacity duration-200 ${!leftPinned && !leftHovered ? 'opacity-0' : 'opacity-100'}`}>
+            <div className="h-full overflow-y-auto p-4">
+              <div className="flex items-center justify-between mb-4 px-2">
+                <h3 className="font-bold text-gray-700 dark:text-gray-200">文档目录</h3>
+                <button
+                  onClick={() => setIsSidebarOpen(false)}
+                  className="p-1 text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
+                >
+                  <X size={20} />
+                </button>
+              </div>
               {treeData.map((node) => (
                 <TreeNode
                   key={node.uuid}
@@ -409,97 +405,134 @@ const RepoDetail = () => {
               ))}
             </div>
           </div>
-        </div>
-      </div>
 
-      {/* Main Content Area Wrapper */}
-      <div className="flex-1 flex min-w-0 bg-white dark:bg-gray-800 relative">
-        
-        {/* Article Content (Scrollable) */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-8 scroll-smooth" id="article-scroll-container">
-          {/* Mobile Menu Button */}
-          <div className="md:hidden mb-4 flex justify-between items-center">
-            <button
-              onClick={() => setIsSidebarOpen(true)}
-              className="flex items-center text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400"
-            >
-              <Menu size={24} className="mr-2" />
-              <span className="font-medium">目录</span>
-            </button>
-            {toc.length > 0 && (
-              <button
-                onClick={() => setIsTocOpen(true)}
-                className="flex items-center text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400"
-              >
-                <List size={24} />
-              </button>
-            )}
+          {/* Desktop Left Sidebar */}
+          <div
+            className={`hidden md:block relative z-20 transition-all duration-300 ${leftPinned ? 'w-80' : 'w-8'}`}
+            onMouseEnter={() => setLeftHovered(true)}
+            onMouseLeave={() => setLeftHovered(false)}
+          >
+            <div className={`
+          h-full bg-gray-50 dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700
+          transition-transform duration-300 ease-in-out
+          absolute top-0 left-0 w-80 shadow-xl
+          ${leftPinned ? 'translate-x-0' : (leftHovered ? 'translate-x-0' : '-translate-x-[calc(100%-2rem)]')}
+        `}>
+              <div className="h-full flex flex-col">
+                <div className="flex items-center justify-between px-2 border-b border-gray-200 dark:border-gray-700 shrink-0 h-14">
+                  <h3 className={`font-bold text-gray-700 dark:text-gray-200 transition-opacity duration-200 ${!leftPinned && !leftHovered ? 'opacity-0' : 'opacity-100'}`}>
+                    文档目录
+                  </h3>
+                  <button
+                    onClick={() => setLeftPinned(!leftPinned)}
+                    className="p-1 text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
+                    title={leftPinned ? "取消固定" : "固定侧边栏"}
+                  >
+                    {leftPinned ? <PinOff size={16} /> : <Pin size={16} className="fill-current" />}
+                  </button>
+                </div>
+                <div className={`flex-1 overflow-y-auto p-4 transition-opacity duration-200 ${!leftPinned && !leftHovered ? 'opacity-0' : 'opacity-100'}`}>
+                  {treeData.map((node) => (
+                    <TreeNode
+                      key={node.uuid}
+                      node={node}
+                      onSelect={handleSelectDoc}
+                      selectedSlug={selectedDoc?.slug}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
 
-          {contentLoading ? (
-            <div className="flex justify-center items-center h-64">
-              <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
-            </div>
-          ) : selectedDoc ? (
-            <div className="max-w-3xl mx-auto">
-              <div className="flex items-center justify-between mb-6">
-                <h1 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white">{selectedDoc.title}</h1>
-              </div>
-              
-              <div className="flex flex-wrap items-center text-sm text-gray-500 dark:text-gray-400 mb-8 pb-4 border-b border-gray-200 dark:border-gray-700 gap-y-2">
-                <span className="mr-4 flex items-center">
-                  作者: 
-                  <button 
-                    onClick={() => author && setSelectedMember(author)}
-                    className={`ml-1 font-medium ${author ? 'text-blue-600 dark:text-blue-400 hover:underline cursor-pointer' : ''}`}
-                    disabled={!author}
+          {/* Main Content Area Wrapper */}
+          <div className="flex-1 flex min-w-0 bg-white dark:bg-gray-800 relative">
+
+            {/* Article Content (Scrollable) */}
+            <div className="flex-1 overflow-y-auto p-4 md:p-8 scroll-smooth" id="article-scroll-container">
+              {/* Mobile Menu Button */}
+              <div className="md:hidden mb-4 flex justify-between items-center">
+                <button
+                  onClick={() => setIsSidebarOpen(true)}
+                  className="flex items-center text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400"
+                >
+                  <Menu size={24} className="mr-2" />
+                  <span className="font-medium">目录</span>
+                </button>
+                {toc.length > 0 && (
+                  <button
+                    onClick={() => setIsTocOpen(true)}
+                    className="flex items-center text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400"
                   >
-                    {author ? author.name : '未知作者'}
+                    <List size={24} />
                   </button>
-                </span>
-                <span className="mr-4">
-                  更新: {formatDate(selectedDoc.content_updated_at || selectedDoc.updated_at, { hour: '2-digit', minute: '2-digit' })}
-                </span>
-                <span className="mr-4">字数: {selectedDoc.word_count}</span>
-                <span className="mr-4">阅读: {selectedDoc.read_count || 0}</span>
-                <span>点赞: {selectedDoc.likes_count || 0}</span>
+                )}
               </div>
 
-              {/* AI Summary Component */}
-              <div className="mb-6">
-                <AISummary docId={selectedDoc.id} content={selectedDoc.body || selectedDoc.body_html} />
-              </div>
-              
-              <div 
-                ref={markdownRef}
-                className="markdown-body dark:bg-gray-800 dark:text-gray-200"
-                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(selectedDoc.body_html) }} 
-                onClick={(e) => {
-                  if (e.target.tagName === 'IMG') {
-                    setPreviewImage(e.target.src);
-                  }
-                }}
-              />
-
-              {/* Comment Section */}
-              <CommentSection docId={selectedDoc.yuque_id} />
-              
-              {repoInfo && (
-                <div className="mt-8 pt-4 border-t border-gray-200 dark:border-gray-700">
-                  <a 
-                    href={`https://nova.yuque.com/${repoInfo.namespace}/${selectedDoc.slug}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-600 dark:text-blue-400 hover:underline flex items-center w-fit"
-                  >
-                    <ExternalLink className="w-4 h-4 mr-1" />
-                    查看原文
-                  </a>
+              {contentLoading ? (
+                <div className="flex justify-center items-center h-64">
+                  <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
                 </div>
-              )}
+              ) : selectedDoc ? (
+                <div className="max-w-3xl mx-auto">
+                  <div className="flex items-center justify-between mb-6">
+                    <h1 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-white">{selectedDoc.title}</h1>
+                  </div>
 
-              {/* Add custom styles for dark mode markdown if github-markdown-css doesn't support it automatically via class */}
-              <style>{`
+                  <div className="flex flex-wrap items-center text-sm text-gray-500 dark:text-gray-400 mb-8 pb-4 border-b border-gray-200 dark:border-gray-700 gap-y-2">
+                    <span className="mr-4 flex items-center">
+                      作者:
+                      <button
+                        onClick={() => author && setSelectedMember(author)}
+                        className={`ml-1 font-medium ${author ? 'text-blue-600 dark:text-blue-400 hover:underline cursor-pointer' : ''}`}
+                        disabled={!author}
+                      >
+                        {author ? author.name : '未知作者'}
+                      </button>
+                    </span>
+                    <span className="mr-4">
+                      更新: {formatDate(selectedDoc.content_updated_at || selectedDoc.updated_at, { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                    <span className="mr-4">字数: {selectedDoc.word_count}</span>
+                    <span className="mr-4">阅读: {selectedDoc.read_count || 0}</span>
+                    <span>点赞: {selectedDoc.likes_count || 0}</span>
+                  </div>
+
+                  {/* AI Summary Component */}
+                  <div className="mb-6">
+                    <AISummary docId={selectedDoc.id} content={selectedDoc.body || selectedDoc.body_html} />
+                  </div>
+
+                  <div
+                    ref={markdownRef}
+                    className="markdown-body dark:bg-gray-800 dark:text-gray-200"
+                    dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(selectedDoc.body_html) }}
+                    onClick={(e) => {
+                      if (e.target.tagName === 'IMG') {
+                        setPreviewImage(e.target.src);
+                      }
+                    }}
+                  />
+
+                  {/* Comment Section */}
+                  <CommentSection docId={selectedDoc.yuque_id} />
+
+                  {repoInfo && (
+                    <div className="mt-8 pt-4 border-t border-gray-200 dark:border-gray-700">
+                      <a
+                        href={`https://nova.yuque.com/${repoInfo.namespace}/${selectedDoc.slug}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 dark:text-blue-400 hover:underline flex items-center w-fit"
+                      >
+                        <ExternalLink className="w-4 h-4 mr-1" />
+                        查看原文
+                      </a>
+                    </div>
+                  )}
+
+                  {/* Add custom styles for dark mode markdown if github-markdown-css doesn't support it automatically via class */}
+                  <style>{`
                 .dark .markdown-body {
                   color-scheme: dark;
                   color: #c9d1d9;
@@ -648,95 +681,98 @@ const RepoDetail = () => {
                   border-color: #30363d;
                 }
               `}</style>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full text-gray-400 dark:text-gray-600">
+                  <FileText size={48} className="mb-4 opacity-20" />
+                  <p>请从左侧选择文档阅读</p>
+                </div>
+              )}
             </div>
-          ) : (
-            <div className="flex flex-col items-center justify-center h-full text-gray-400 dark:text-gray-600">
-              <FileText size={48} className="mb-4 opacity-20" />
-              <p>请从左侧选择文档阅读</p>
-            </div>
-          )}
-        </div>
 
-        {/* Desktop TOC (Right Sidebar) */}
-        {selectedDoc && toc.length > 0 && (
-          <div 
-            className={`hidden xl:block relative z-20 transition-all duration-300 ${rightPinned ? 'w-64' : 'w-8'}`}
-            onMouseEnter={() => setRightHovered(true)}
-            onMouseLeave={() => setRightHovered(false)}
-          >
-            <div className={`
+            {/* Desktop TOC (Right Sidebar) */}
+            {selectedDoc && toc.length > 0 && (
+              <div
+                className={`hidden xl:block relative z-20 transition-all duration-300 ${rightPinned ? 'w-64' : 'w-8'}`}
+                onMouseEnter={() => setRightHovered(true)}
+                onMouseLeave={() => setRightHovered(false)}
+              >
+                <div className={`
               h-full bg-gray-50/50 dark:bg-gray-900/50 border-l border-gray-200 dark:border-gray-700
               transition-transform duration-300 ease-in-out
               absolute top-0 right-0 w-64 shadow-xl
               ${rightPinned ? 'translate-x-0' : (rightHovered ? 'translate-x-0' : 'translate-x-[calc(100%-2rem)]')}
             `}>
-              <div className="h-full flex flex-col">
-                <div className="flex items-center justify-between px-2 shrink-0 h-14">
-                  <button 
-                    onClick={() => setRightPinned(!rightPinned)}
-                    className="p-1 text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
-                    title={rightPinned ? "取消固定" : "固定侧边栏"}
-                  >
-                    {rightPinned ? <PinOff size={16} /> : <Pin size={16} className="fill-current" />}
-                  </button>
-                  <span className={`font-bold text-gray-700 dark:text-gray-200 transition-opacity duration-200 ${!rightPinned && !rightHovered ? 'opacity-0' : 'opacity-100'}`}>
-                    本文目录
-                  </span>
-                </div>
-                <div className={`flex-1 overflow-y-auto p-4 pt-0 transition-opacity duration-200 ${!rightPinned && !rightHovered ? 'opacity-0' : 'opacity-100'}`}>
-                  <TableOfContents toc={toc} activeId={activeId} onSelect={scrollToHeading} />
+                  <div className="h-full flex flex-col">
+                    <div className="flex items-center justify-between px-2 shrink-0 h-14">
+                      <button
+                        onClick={() => setRightPinned(!rightPinned)}
+                        className="p-1 text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
+                        title={rightPinned ? "取消固定" : "固定侧边栏"}
+                      >
+                        {rightPinned ? <PinOff size={16} /> : <Pin size={16} className="fill-current" />}
+                      </button>
+                      <span className={`font-bold text-gray-700 dark:text-gray-200 transition-opacity duration-200 ${!rightPinned && !rightHovered ? 'opacity-0' : 'opacity-100'}`}>
+                        本文目录
+                      </span>
+                    </div>
+                    <div className={`flex-1 overflow-y-auto p-4 pt-0 transition-opacity duration-200 ${!rightPinned && !rightHovered ? 'opacity-0' : 'opacity-100'}`}>
+                      <TableOfContents toc={toc} activeId={activeId} onSelect={scrollToHeading} />
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
-          </div>
-        )}
+            )}
 
-        {/* Mobile TOC Drawer (Right Slide-in) */}
-        <div className={`
+            {/* Mobile TOC Drawer (Right Slide-in) */}
+            <div className={`
           fixed inset-y-0 right-0 z-50 w-72 bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 transform transition-transform duration-300 ease-in-out xl:hidden
           ${isTocOpen ? 'translate-x-0' : 'translate-x-full'}
         `}>
-          <div className="h-full overflow-y-auto p-4">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-gray-700 dark:text-gray-200">内容大纲</h3>
-              <button 
-                onClick={() => setIsTocOpen(false)}
-                className="p-1 text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
-              >
-                <X size={20} />
-              </button>
+              <div className="h-full overflow-y-auto p-4">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-bold text-gray-700 dark:text-gray-200">内容大纲</h3>
+                  <button
+                    onClick={() => setIsTocOpen(false)}
+                    className="p-1 text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+                <TableOfContents toc={toc} activeId={activeId} onSelect={scrollToHeading} />
+              </div>
             </div>
-            <TableOfContents toc={toc} activeId={activeId} onSelect={scrollToHeading} />
+
+            {/* Mobile Floating TOC Button (Bottom Right) */}
+            {selectedDoc && toc.length > 0 && !isTocOpen && (
+              <button
+                onClick={() => setIsTocOpen(true)}
+                className="fixed bottom-24 right-6 z-40 p-3 bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 rounded-full shadow-lg border border-gray-200 dark:border-gray-700 xl:hidden hover:bg-gray-50 dark:hover:bg-gray-700 transition-all"
+                aria-label="Toggle Table of Contents"
+              >
+                <List size={20} />
+              </button>
+            )}
+
           </div>
-        </div>
 
-        {/* Mobile Floating TOC Button (Bottom Right) */}
-        {selectedDoc && toc.length > 0 && !isTocOpen && (
-          <button
-            onClick={() => setIsTocOpen(true)}
-            className="fixed bottom-24 right-6 z-40 p-3 bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 rounded-full shadow-lg border border-gray-200 dark:border-gray-700 xl:hidden hover:bg-gray-50 dark:hover:bg-gray-700 transition-all"
-            aria-label="Toggle Table of Contents"
-          >
-            <List size={20} />
-          </button>
-        )}
-
-      </div>
+        </>
+      )}
 
       {/* Member Modal */}
       {selectedMember && (
-        <MemberModal 
-          member={selectedMember} 
-          onClose={() => setSelectedMember(null)} 
+        <MemberModal
+          member={selectedMember}
+          onClose={() => setSelectedMember(null)}
           onUpdate={handleMemberUpdate}
         />
       )}
 
       {/* Image Preview */}
       {previewImage && (
-        <ImagePreview 
-          src={previewImage} 
-          onClose={() => setPreviewImage(null)} 
+        <ImagePreview
+          src={previewImage}
+          onClose={() => setPreviewImage(null)}
         />
       )}
     </div>

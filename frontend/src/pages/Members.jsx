@@ -62,13 +62,27 @@ const Members = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedMember, setSelectedMember] = useState(null);
 
+  // Repo Filter
+  const [repos, setRepos] = useState([]);
+  const [selectedRepoId, setSelectedRepoId] = useState('');
+
+  const fetchRepos = async () => {
+    try {
+      const { getRepos } = await import('../api'); // Avoid circular dependency if any
+      const response = await getRepos();
+      setRepos(response.data);
+    } catch (error) {
+      console.error('Failed to fetch repos for filtering:', error);
+    }
+  }
+
   const fetchMembers = async () => {
     try {
-      const response = await getMembers();
+      setLoading(true);
+      const params = selectedRepoId ? { repo_id: parseInt(selectedRepoId) } : {};
+
+      const response = await getMembers(params);
       setMembers(response.data);
-      // If we are searching, we should re-filter, but for simplicity we can just update filteredMembers if search is empty
-      // or let the useEffect handle it.
-      // Actually, the useEffect below depends on [searchTerm, members], so updating members will trigger re-filter.
     } catch (error) {
       console.error('Failed to fetch members:', error);
     } finally {
@@ -77,8 +91,12 @@ const Members = () => {
   };
 
   useEffect(() => {
-    fetchMembers();
+    fetchRepos();
   }, []);
+
+  useEffect(() => {
+    fetchMembers();
+  }, [selectedRepoId]);
 
   const handleFollowToggle = async (member, isFollowing) => {
     try {
@@ -95,17 +113,13 @@ const Members = () => {
   };
 
   const handleFollowAll = async () => {
-    console.log('handleFollowAll called');
     if (!window.confirm("确定要关注所有成员吗？")) {
-      console.log('Follow All cancelled by user');
       return;
     }
 
     try {
-      console.log('Follow All starting');
       setActionLoading('follow');
-      await followAllMembers();
-      console.log('Follow All success, fetching members');
+      await followAllMembers(selectedRepoId);
       await fetchMembers();
     } catch (error) {
       console.error('Failed to follow all members:', error);
@@ -116,17 +130,13 @@ const Members = () => {
   };
 
   const handleUnfollowAll = async () => {
-    console.log('handleUnfollowAll called');
     if (!window.confirm("确定要取消关注所有成员吗？")) {
-      console.log('Unfollow All cancelled by user');
       return;
     }
 
     try {
-      console.log('Unfollow All starting');
       setActionLoading('unfollow');
-      await unfollowAllMembers();
-      console.log('Unfollow All success, fetching members');
+      await unfollowAllMembers(selectedRepoId);
       await fetchMembers();
     } catch (error) {
       console.error('Failed to unfollow all members:', error);
@@ -153,13 +163,26 @@ const Members = () => {
     setFilteredMembers(filtered);
   }, [searchTerm, members]);
 
-  if (loading) return <div className="text-center py-10 dark:text-gray-300">加载中...</div>;
+  // if (loading) return <div className="text-center py-10 dark:text-gray-300">加载中...</div>;
 
   return (
     <div>
-      <div className="flex flex-col sm:flex-row justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-4 sm:mb-0">团队成员</h1>
-        <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-6 gap-4">
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white sm:mb-0">团队成员</h1>
+
+        <div className="flex flex-col sm:flex-row gap-4 w-full lg:w-auto items-center">
+          {/* Repo Filter */}
+          <select
+            value={selectedRepoId}
+            onChange={(e) => setSelectedRepoId(e.target.value)}
+            className="block w-full sm:w-48 py-2 px-3 border border-gray-300 bg-white dark:bg-gray-800 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:text-gray-200 dark:border-gray-600"
+          >
+            <option value="">全部知识库</option>
+            {repos.map(r => (
+              <option key={r.yuque_id} value={r.yuque_id}>{r.name}</option>
+            ))}
+          </select>
+
           {user && (
             <div className="flex w-full sm:w-auto gap-2">
               <button
