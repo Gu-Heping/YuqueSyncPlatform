@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import httpx
 from datetime import datetime
 from typing import List, Dict, Optional
 from app.services.yuque_client import YuqueClient
@@ -19,7 +20,36 @@ class SyncService:
         self.client = YuqueClient()
         # 限制并发请求数，防止触发语雀流控 (429 Too Many Requests)
         self.semaphore = asyncio.Semaphore(5) 
-        self.rag_service = RAGService() 
+        self.rag_service = RAGService()
+
+    async def _cleanup_repo(self, repo_id: int):
+        """
+        清理已删除的知识库及其所有文档
+        """
+        try:
+            # 1. 查找该知识库下的所有文档
+            docs_to_delete = await Doc.find(Doc.repo_id == repo_id).to_list()
+            logger.info(f"Cleanup: 发现 {len(docs_to_delete)} 个文档需要删除 (Repo ID: {repo_id})")
+
+            # 2. 删除文档 (向量库 + MongoDB)
+            for doc in docs_to_delete:
+                if doc.yuque_id:
+                    await self.rag_service.delete_doc(doc.yuque_id)
+                await doc.delete()
+            
+            # 3. 删除 Repo 记录
+            repo = await Repo.find_one(Repo.yuque_id == repo_id)
+            if repo:
+                await repo.delete()
+                logger.info(f"Cleanup: 知识库记录已删除 ({repo.name})")
+            else:
+                 logger.info(f"Cleanup: 知识库记录不存在 ({repo_id})")
+
+            logger.info(f"知识库 {repo_id} 清理完成")
+
+        except Exception as e:
+            logger.error(f"清理知识库 {repo_id} 失败: {e}")
+ 
 
     async def sync_all(self):
         """
@@ -207,7 +237,16 @@ class SyncService:
         """
         try:
             logger.info(f"正在同步知识库结构 (Repo ID: {repo_id})")
-            toc_list = await self.client.get_repo_toc(repo_id)
+            toc_list = []
+            try:
+                toc_list = await self.client.get_repo_toc(repo_id)
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 404:
+                    logger.warning(f"知识库 {repo_id} 在语雀端已删除 (404)，准备执行本地清理...")
+                    await self._cleanup_repo(repo_id)
+                    return
+                raise e # 其他错误抛出
+
             
             # 1. 收集活跃 UUID
             active_uuids = [item['uuid'] for item in toc_list]
