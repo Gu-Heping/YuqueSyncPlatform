@@ -103,42 +103,35 @@ class SyncService:
                     raw_status = item.get('status')
                     is_active = (raw_status == 1)
 
-                    # 查找现有成员
-                    existing_member = await Member.find_one(Member.yuque_id == yuque_id)
+                    # Upsert 成员: 无论是否存在，都尝试更新 (使用原子操作避免并发重复)
+                    member_data = {
+                        "yuque_id": yuque_id,
+                        "login": user_info.get('login') or f"u_{yuque_id}",
+                        "name": user_info.get('name') or "Unknown",
+                        "avatar_url": user_info.get('avatar_url'),
+                        "description": user_info.get('description'),
+                        "role": item.get('role'),
+                        "status": raw_status,
+                        "is_active": is_active,
+                        "updated_at": datetime.utcnow()
+                    }
                     
-                    if existing_member:
-                        # 更新语雀侧字段，但保留用户自定义字段 (hashed_password, email)
-                        existing_member.login = user_info.get('login') or f"u_{yuque_id}"
-                        existing_member.name = user_info.get('name') or "Unknown"
-                        existing_member.avatar_url = user_info.get('avatar_url')
-                        existing_member.description = user_info.get('description')
-                        existing_member.role = item.get('role')
-                        existing_member.status = raw_status
-                        existing_member.is_active = is_active
-                        existing_member.updated_at = datetime.utcnow()
-                        
-                        # 自动修复：如果现有用户没有密码，设置默认密码
-                        if not existing_member.hashed_password:
-                            existing_member.hashed_password = get_password_hash("123456")
-                            
-                        # 注意：这里不更新 email，防止覆盖用户绑定的邮箱
-                        await existing_member.save()
-                    else:
-                        # 新成员：设置默认密码
-                        member = Member(
-                            yuque_id=yuque_id,
-                            login=user_info.get('login') or f"u_{yuque_id}",
-                            name=user_info.get('name') or "Unknown",
-                            avatar_url=user_info.get('avatar_url'),
-                            description=user_info.get('description'),
-                            email=user_info.get('email') or item.get('email'),
-                            role=item.get('role'),
-                            status=raw_status,
-                            is_active=is_active,
-                            updated_at=datetime.utcnow(),
-                            hashed_password=get_password_hash("123456")
-                        )
-                        await member.create()
+                    # 仅在非空时更新 email (避免覆盖)
+                    if user_info.get('email') or item.get('email'):
+                        member_data["email"] = user_info.get('email') or item.get('email')
+
+                    # 查找是否存在，以决定是否设置默认密码
+                    existing = await Member.find_one(Member.yuque_id == yuque_id)
+                    if not existing:
+                        member_data["hashed_password"] = get_password_hash("123456")
+                        member_data["created_at"] = datetime.utcnow()
+                    
+                    # 执行 Upsert
+                    # 注意: exclude id 是为了防止 _id 冲突 (Beanie 内部逻辑)，这里我们手动构造 $set
+                    await Member.find_one(Member.yuque_id == yuque_id).upsert(
+                        {"$set": member_data},
+                        on_insert=Member(**member_data)
+                    )
 
                 except Exception as e:
                     logger.error(f"处理成员数据出错: {e}, 数据: {item}")
@@ -324,8 +317,9 @@ class SyncService:
                 # 基础结构信息
                 doc_data = {
                     "uuid": toc_item['uuid'],
+
                     "yuque_id": yuque_id,
-                    "repo_id": repo_id,
+                    "repo_id": int(repo_id), # 强制转换为 int
                     "slug": slug if slug else toc_item['uuid'], # Fallback
                     "title": toc_item['title'],
                     "type": doc_type,

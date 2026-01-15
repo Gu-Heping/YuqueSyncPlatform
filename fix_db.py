@@ -1,63 +1,76 @@
 import asyncio
 from motor.motor_asyncio import AsyncIOMotorClient
 from app.core.config import settings
+from app.models.schemas import User, Repo, Doc, Member, Comment, ChatSession, ChatMessage, Activity
+from beanie import init_beanie
 import pymongo
 
-async def main():
-    client = AsyncIOMotorClient(settings.MONGO_URI)
-    db = client[settings.MONGO_DB_NAME]
-    collection = db["members"]
+async def fix_duplicate_members():
+    print(">>> Checking for duplicate members...")
+    db = Member.get_pymongo_collection()
     
-    print(f"Connected to {settings.MONGO_DB_NAME}.members")
+    # 查找所有重复的 yuque_id
+    pipeline = [
+        {"$group": {"_id": "$yuque_id", "count": {"$sum": 1}, "ids": {"$push": "$_id"}}},
+        {"$match": {"count": {"$gt": 1}}}
+    ]
     
-    # 1. Dedup Member Documents
-    cursor = collection.find({})
-    members = await cursor.to_list(length=10000)
+    duplicates = await db.aggregate(pipeline).to_list(None)
     
-    yuque_ids = {}
-    for m in members:
-        yid = m.get("yuque_id")
-        if yid is None: continue
-        if yid in yuque_ids:
-            yuque_ids[yid].append(m)
-        else:
-            yuque_ids[yid] = [m]
-            
-    duplicates = {k: v for k, v in yuque_ids.items() if len(v) > 1}
+    if not duplicates:
+        print("No duplicate members found.")
+        return
+
+    print(f"Found {len(duplicates)} duplicate sets.")
     
-    print(f"Found {len(duplicates)} duplicate groups.")
-    
-    for yid, docs in duplicates.items():
-        print(f"Fixing duplicates for Yuque ID {yid}...")
-        # Sort by updated_at desc, keep the first one
-        docs.sort(key=lambda x: x.get("updated_at") or x.get("_id").generation_time, reverse=True)
-        keep = docs[0]
-        to_delete = docs[1:]
+    for item in duplicates:
+        yuque_id = item["_id"]
+        ids = item["ids"]
+        print(f"Fixing duplicates for yuque_id {yuque_id}, found {len(ids)} copies.")
         
-        for d in to_delete:
-            print(f"  Deleting duplicate doc {d['_id']} (Name: {d.get('name')})")
-            await collection.delete_one({"_id": d["_id"]})
-            
-    # 2. Dedup Followers list in each document
-    print("Deduplicating followers lists...")
-    async for m in collection.find({}):
-        followers = m.get("followers")
-        if followers:
-            unique_followers = list(set(followers))
-            if len(unique_followers) != len(followers):
-                print(f"  Fixing followers for {m.get('name')} ({len(followers)} -> {len(unique_followers)})")
-                await collection.update_one(
-                    {"_id": m["_id"]},
-                    {"$set": {"followers": unique_followers}}
-                )
+        # 保留 id 最大的（通常是最后插入的，或者也可以按 updated_at 排序）
+        # 这里我们按 _id 排序，保留最后一个
+        ids.sort()
+        to_delete = ids[:-1]
+        
+        result = await db.delete_many({"_id": {"$in": to_delete}})
+        print(f"Deleted {result.deleted_count} duplicate records.")
+
+async def fix_doc_repo_ids():
+    print("\n>>> Checking Doc repo_id types...")
+    # UpdateMany with aggregation pipeline is only supported in MongoDB 4.2+
+    # Here we iterate and update for safety and compatibility
     
-    # 3. Ensure Index
-    print("Ensuring unique index on yuque_id...")
-    try:
-        await collection.create_index([("yuque_id", pymongo.ASCENDING)], unique=True)
-        print("Index created/verified.")
-    except Exception as e:
-        print(f"Index creation failed: {e}")
+    count = 0
+    async for doc in Doc.find(Doc.repo_id != None):
+        if not isinstance(doc.repo_id, int):
+            try:
+                fixed_id = int(doc.repo_id)
+                doc.repo_id = fixed_id
+                await doc.save()
+                count += 1
+            except Exception as e:
+                print(f"Failed to convert repo_id {doc.repo_id} for doc {doc.uuid}: {e}")
+                
+    if count > 0:
+        print(f"Fixed {count} documents with non-int repo_id.")
+    else:
+        print("All documents have valid integer repo_ids.")
+
+async def main():
+    print("Connecting to MongoDB...")
+    client = AsyncIOMotorClient(settings.MONGO_URI)
+    await init_beanie(
+        database=client[settings.MONGO_DB_NAME],
+        document_models=[User, Repo, Doc, Member, Comment, ChatSession, ChatMessage, Activity],
+        allow_index_dropping=True
+    )
+    print("Connected.")
+
+    await fix_duplicate_members()
+    await fix_doc_repo_ids()
+    
+    print("\n>>> DB Fix Complete.")
 
 if __name__ == "__main__":
     asyncio.run(main())
