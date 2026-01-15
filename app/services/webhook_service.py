@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime
-from app.models.schemas import WebhookPayload, Doc, Comment, Member
+from app.models.schemas import WebhookPayload, Doc, Comment, Member, Repo
 from app.services.sync_service import SyncService
 from app.services.email_service import EmailService
 from app.services.feed_service import FeedService
@@ -49,9 +49,25 @@ class WebhookService:
             logger.error("Doc event missing 'book' info")
             return
 
+        # 0. 检查并自动创建知识库 (Repo)
+        sync_service = SyncService()
+        try:
+            repo_id = data.book.id
+            repo = await Repo.find_one(Repo.yuque_id == repo_id)
+            if not repo:
+                # 获取完整 Repo 详情，确保 Namespace 等关键字段存在
+                repo_detail = await sync_service.client.get_repo_detail(repo_id)
+                if repo_detail:
+                    await sync_service._upsert_repo(repo_detail)
+                    logger.info(f"Auto-synced new repo from webhook: {repo_detail.get('name')} ({repo_id})")
+                else:
+                    logger.error(f"Failed to fetch repo detail for {repo_id}, skipping auto-create")
+        except Exception as e:
+            logger.error(f"Failed to auto-create repo {data.book.id}: {e}")
+
         # 1. 同步作者信息 (Actor)
-        # Webhook 中的 actor 通常是文档的作者/最后修改者
-        user_id = data.user_id # 直接使用 payload 中的 user_id (对应作者)
+        # ... (keep existing actor sync logic) ...
+        user_id = data.user_id 
         
         author_member = None
         if data.actor and data.actor.id == user_id:
@@ -72,65 +88,81 @@ class WebhookService:
             except Exception as e:
                 logger.error(f"Failed to sync actor {user_id}: {e}")
         
-        # 如果上面没找到或没同步，尝试再次查找
         if not author_member:
              author_member = await Member.find_one(Member.yuque_id == user_id)
 
-        # 尝试查找现有文档
-        doc = await Doc.find_one(Doc.yuque_id == data.id)
-        
-        # 补充：尝试从语雀 API 获取最新的统计数据 (特别是 read_count，Webhook 中可能缺失)
-        read_count = data.read_count
-        likes_count = data.likes_count
-        comments_count = data.comments_count
-        
-        sync_service = SyncService()
+        # 2. 强一致性同步：拉取文档详情
+        # 不再依赖 Webhook Payload 中的部分数据，而是直接从 API 获取最新最全的数据
         try:
             detail = await sync_service.client.get_doc_detail(data.book.id, data.slug)
             if detail:
-                read_count = detail.get('read_count', read_count)
-                likes_count = detail.get('likes_count', likes_count)
-                comments_count = detail.get('comments_count', comments_count)
+                # 构造符合 Doc 模型的数据字典
+                # 注意：Webhook 通常只触发单个文档更新，所以 struct 信息 (prev_uuid, parent_uuid 等) 
+                # 可能需要通过 sync_repo_structure 来修复，这里主要关注内容和元数据
+                
+                # 尝试获取现有的 doc 以保留 uuid (如果存在)
+                existing_doc = await Doc.find_one(Doc.yuque_id == data.id)
+                uuid = existing_doc.uuid if existing_doc else f"webhook-{data.id}"
+
+                doc_data = {
+                    "uuid": uuid,
+                    "yuque_id": detail.get('id'),
+                    "repo_id": detail.get('book_id', data.book.id),
+                    "slug": detail.get('slug'),
+                    "title": detail.get('title'),
+                    "description": detail.get('description'),
+                    "cover": detail.get('cover'),
+                    "body": detail.get('body'),
+                    "body_html": detail.get('body_html'),
+                    "format": detail.get('format'),
+                    "word_count": detail.get('word_count', 0),
+                    "likes_count": detail.get('likes_count', 0),
+                    "read_count": detail.get('read_count', 0),
+                    "comments_count": detail.get('comments_count', 0),
+                    "created_at": sync_service._parse_time(detail.get('created_at')),
+                    "updated_at": sync_service._parse_time(detail.get('updated_at')),
+                    "content_updated_at": sync_service._parse_time(detail.get('content_updated_at')),
+                    "published_at": sync_service._parse_time(detail.get('published_at')),
+                    "first_published_at": sync_service._parse_time(detail.get('first_published_at')),
+                    "user_id": detail.get('user_id'),
+                    "last_editor_id": detail.get('last_editor_id'),
+                    "type": "DOC", # Webhook 推送的通常是文档
+                    "last_synced_at": datetime.utcnow()
+                }
+
+                # 使用 SyncService 的 _upsert_doc (它会自动处理 created_at 保护)
+                # 但 _upsert_doc 期望的是 struct 字段齐全的，这里可能缺 parent_uuid 等
+                # 我们复用 _upsert_doc 的逻辑，或者直接在这里 upsert
+                # 为了简单直接，我们在这里从 detail 构造并 upsert，
+                # 结构修正交给最后的 sync_repo_structure
+
+                doc_obj = Doc(**doc_data)
+                update_data = doc_obj.model_dump(exclude={"id"})
+                if update_data.get("created_at") is None:
+                    update_data.pop("created_at", None)
+
+                await Doc.find_one(Doc.yuque_id == doc_obj.yuque_id).upsert(
+                    {"$set": update_data},
+                    on_insert=doc_obj
+                )
+                logger.info(f"Doc full-synced from API: {doc_data['title']} ({doc_data['yuque_id']})")
+                
+                # 触发向量化
+                if doc_obj.body:
+                     await sync_service.rag_service.upsert_doc_to_vector_db(doc_obj)
+
+            else:
+                 logger.warning(f"Failed to fetch doc detail for {data.slug}, falling back to webhook payload")
+                 # Fallback logic if API fails? Or just skip? 
+                 # Given user request for "strong consistency", maybe we should skip if verify fails, 
+                 # but to be safe let's keep the fallback or just return error.
+                 # Let's return here to avoid partial data if user insists on full sync.
+                 return 
+                 
         except Exception as e:
-            logger.warning(f"Failed to fetch doc stats from API: {e}")
+            logger.error(f"Failed to fetch/sync doc detail: {e}")
         finally:
             await sync_service.client.close()
-
-        # 2. 准备更新的数据
-        # 直接使用 Webhook Payload 中的数据，不再额外调用 API
-        update_dict = {
-            "title": data.title,
-            "slug": data.slug,
-            "repo_id": data.book.id,
-            "user_id": user_id,
-            "body": data.body,
-            "body_html": data.body_html,
-            "created_at": data.created_at, # Ensure created_at is included
-            "updated_at": data.updated_at or datetime.utcnow(),
-            "content_updated_at": data.content_updated_at,
-            "published_at": data.published_at,
-            "first_published_at": data.first_published_at,
-            
-            # 统计信息
-            "word_count": data.word_count,
-            "likes_count": likes_count,
-            "read_count": read_count,
-            "comments_count": comments_count,
-        }
-        
-        if doc:
-            await doc.update({"$set": update_dict})
-            logger.info(f"Doc updated: {data.title} ({data.id})")
-        else:
-            # 如果是新文档，由于缺少 TOC 中的 UUID，我们生成一个临时的
-            # 在下次全量同步时，这个文档可能会被更新或合并
-            update_dict["uuid"] = f"webhook-{data.id}"
-            update_dict["yuque_id"] = data.id
-            update_dict["type"] = "DOC" # 默认为文档
-            
-            new_doc = Doc(**update_dict)
-            await new_doc.insert()
-            logger.info(f"Doc created (from webhook): {data.title} ({data.id})")
 
         # 3. 触发邮件通知 (仅当有后台任务且作者存在且有粉丝时)
         # 仅当操作者是文档作者本人时才发送通知 (防止误报)

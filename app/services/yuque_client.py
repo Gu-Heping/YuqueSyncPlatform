@@ -60,3 +60,9 @@ class YuqueClient:
         # 增加 raw=1 参数可能获取源码，视需求而定，这里使用默认
         data = await self._get(f"/repos/{repo_id}/docs/{slug}")
         return data.get("data", {})
+
+    async def get_repo_detail(self, repo_id: int) -> Dict:
+        """获取知识库详情"""
+        # API: GET /repos/:id
+        data = await self._get(f"/repos/{repo_id}")
+        return data.get("data", {})

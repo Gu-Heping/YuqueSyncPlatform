@@ -1,9 +1,9 @@
 import pytest
 from httpx import AsyncClient
-from app.main import app
 from mongomock_motor import AsyncMongoMockClient
 from beanie import init_beanie
 from app.models.schemas import User, Member, Doc, Repo, Comment, Activity, WebhookPayload
+from app.core.config import settings
 from app.core.config import settings
 import os
 
