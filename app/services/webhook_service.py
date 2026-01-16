@@ -92,6 +92,14 @@ class WebhookService:
              author_member = await Member.find_one(Member.yuque_id == user_id)
 
         # 2. 强一致性同步：拉取文档详情
+        # 核心修复: 在拉取详情前，先触发一次结构同步 (sync_repo_structure)
+        # 这确保了数据库中存在具有正确 UUID 和 层级信息 (父子关系) 的文档记录
+        # 从而避免 WebhookService 生成临时 UUID 导致的数据冲突和层级丢失
+        try:
+            await sync_service.sync_repo_structure(data.book.id)
+        except Exception as e:
+            logger.error(f"Pre-sync structure failed for repo {data.book.id}: {e}")
+
         # 不再依赖 Webhook Payload 中的部分数据，而是直接从 API 获取最新最全的数据
         try:
             detail = await sync_service.client.get_doc_detail(data.book.id, data.slug)
@@ -101,8 +109,9 @@ class WebhookService:
                 # 可能需要通过 sync_repo_structure 来修复，这里主要关注内容和元数据
                 
                 # 尝试获取现有的 doc 以保留 uuid (如果存在)
+                # 因为上面已经执行了 sync_repo_structure，所以理论上一定能找到正确的 uuid
                 existing_doc = await Doc.find_one(Doc.yuque_id == data.id)
-                uuid = existing_doc.uuid if existing_doc else f"webhook-{data.id}"
+                uuid = existing_doc.uuid if existing_doc else f"webhook-{data.id}"  # Fallback only if sync failed
 
                 doc_data = {
                     "uuid": uuid,
@@ -201,13 +210,15 @@ class WebhookService:
         elif background_tasks and author_member and author_member.followers:
              logger.info(f"Skipped email notification: actor_id ({data.actor_id}) != user_id ({data.user_id})")
 
-        # 如果是新增文档 (publish)，触发目录结构同步
-        if data.action_type == "publish":
-            sync_service = SyncService()
-            try:
-                await sync_service.sync_repo_structure(data.book.id)
-            finally:
-                await sync_service.client.close()
+         # 如果是新增文档 (publish)，触发目录结构同步
+         # (已在流程开头由于 "Pre-sync" 包含，此处可保留作为双重保障，或移除以减少 API 调用)
+         # 为性能考虑，且开头已同步，此处移除
+         # if data.action_type == "publish":
+         #    sync_service = SyncService()
+         #    try:
+         #        await sync_service.sync_repo_structure(data.book.id)
+         #    finally:
+         #        await sync_service.client.close()
 
     async def _handle_doc_delete(self, data):
         """处理文档删除事件"""
