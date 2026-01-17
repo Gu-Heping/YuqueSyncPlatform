@@ -34,6 +34,22 @@ services:
       - qdrant
     networks:
       - yuque-network
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  uptime-kuma:
+    image: louislam/uptime-kuma:1
+    restart: always
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./kuma-data:/app/data
+    networks:
+      - yuque-network
 
   mongo:
     image: mongo:6.0

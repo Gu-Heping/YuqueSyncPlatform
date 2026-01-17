@@ -58,6 +58,13 @@ app.include_router(dashboard_router, prefix="/api/v1/dashboard", tags=["Dashboar
 app.include_router(comments_router, prefix="/api/v1/comments", tags=["Comments"])
 app.include_router(webhook_router, prefix="/webhook")
 
+@app.get("/health", tags=["System"])
+async def health_check():
+    """
+    健康检查接口
+    """
+    return {"status": "ok"}
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
