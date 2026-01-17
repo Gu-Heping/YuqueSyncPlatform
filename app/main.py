@@ -28,9 +28,15 @@ async def lifespan(app: FastAPI):
         allow_index_dropping=True
     )
     
+    # 3. 启动定时任务调度器
+    from app.services.scheduler import SchedulerService
+    scheduler_service = SchedulerService()
+    scheduler_service.start()
+    
     yield
     
-    # 关闭连接（可选，Motor 通常会自动管理）
+    # 4. 关闭清理
+    scheduler_service.stop()
     # client.close()
 
 app = FastAPI(
