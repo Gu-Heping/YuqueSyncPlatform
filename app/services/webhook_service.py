@@ -139,6 +139,17 @@ class WebhookService:
                     "last_synced_at": datetime.utcnow()
                 }
 
+                # 关键修复: 保留 existing_doc 中的结构信息 (parent_uuid, prev_uuid, etc.)
+                # 因为 get_doc_detail 返回的 detail 不包含这些信息，如果不保留，upsert 会将其覆盖为 None
+                if existing_doc:
+                    doc_data.update({
+                        "parent_uuid": existing_doc.parent_uuid,
+                        "prev_uuid": existing_doc.prev_uuid,
+                        "sibling_uuid": existing_doc.sibling_uuid,
+                        "child_uuid": existing_doc.child_uuid,
+                        "depth": existing_doc.depth
+                    })
+
                 # 使用 SyncService 的 _upsert_doc (它会自动处理 created_at 保护)
                 # 但 _upsert_doc 期望的是 struct 字段齐全的，这里可能缺 parent_uuid 等
                 # 我们复用 _upsert_doc 的逻辑，或者直接在这里 upsert
