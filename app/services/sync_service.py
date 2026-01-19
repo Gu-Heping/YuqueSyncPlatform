@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import List, Dict, Optional
 from app.services.yuque_client import YuqueClient
 import math
-from app.models.schemas import User, Repo, Doc, Member
+from app.models.schemas import User, Repo, Doc, Member, Activity
 from app.services.rag_service import RAGService
 from app.core.security import get_password_hash
 
@@ -44,6 +44,11 @@ class SyncService:
                 logger.info(f"Cleanup: 知识库记录已删除 ({repo.name})")
             else:
                  logger.info(f"Cleanup: 知识库记录不存在 ({repo_id})")
+
+            # 4. 删除相关的动态 (Activity)
+            # 使用 beanie 的 delete_many (或底层 pymongo)
+            delete_result = await Activity.find(Activity.repo_id == repo_id).delete()
+            logger.info(f"Cleanup: 已删除相关动态 {delete_result.deleted_count} 条")
 
             logger.info(f"知识库 {repo_id} 清理完成")
 
@@ -229,7 +234,7 @@ class SyncService:
         except Exception as e:
             logger.error(f"同步知识库 {repo_data.get('name')} 失败: {e}")
 
-    async def sync_repo_structure(self, repo_id: int):
+    async def sync_repo_structure(self, repo_id: int, ensure_doc_id: Optional[int] = None):
         """
         仅同步知识库目录结构 (TOC)，不拉取文档详情。
         用于 Webhook 新增/删除文档后快速修复树状结构。
@@ -238,15 +243,38 @@ class SyncService:
         try:
             logger.info(f"正在同步知识库结构 (Repo ID: {repo_id})")
             toc_list = []
-            try:
-                toc_list = await self.client.get_repo_toc(repo_id)
-            except httpx.HTTPStatusError as e:
-                if e.response.status_code == 404:
-                    logger.warning(f"知识库 {repo_id} 在语雀端已删除 (404)，准备执行本地清理...")
-                    await self._cleanup_repo(repo_id)
-                    return
-                raise e # 其他错误抛出
+            max_retries = 3
 
+            for attempt in range(max_retries):
+                try:
+                    toc_list = await self.client.get_repo_toc(repo_id)
+                except httpx.HTTPStatusError as e:
+                    if e.response.status_code == 404:
+                        logger.warning(f"知识库 {repo_id} 在语雀端已删除 (404)，准备执行本地清理...")
+                        await self._cleanup_repo(repo_id)
+                        return
+                    raise e # 其他错误抛出
+                
+                # Retry Logic: 如果指定了 ensure_doc_id，则检查是否在 TOC 中，不在则重试
+                # (解决 Webhook Race Condition: Yuque TOC API 更新可能滞后于 Webhook 推送)
+                if ensure_doc_id:
+                    found = False
+                    for item in toc_list:
+                        # check both id (int) and url (slug) just in case
+                        if item.get('id') == ensure_doc_id or str(item.get('id')) == str(ensure_doc_id):
+                            found = True
+                            break
+                    
+                    if not found:
+                        if attempt < max_retries - 1:
+                            logger.warning(f"Target doc {ensure_doc_id} not found in TOC, retrying... ({attempt + 1}/{max_retries})")
+                            await asyncio.sleep(1.5) # Wait 1.5s before retry
+                            continue
+                        else:
+                            logger.warning(f"Target doc {ensure_doc_id} still NOT found in TOC after {max_retries} attempts.")
+
+                # 成功获取且满足条件 (或重试耗尽)
+                break 
             
             # 1. 收集活跃 UUID
             active_uuids = [item['uuid'] for item in toc_list]

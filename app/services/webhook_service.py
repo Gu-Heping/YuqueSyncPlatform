@@ -96,7 +96,7 @@ class WebhookService:
         # 这确保了数据库中存在具有正确 UUID 和 层级信息 (父子关系) 的文档记录
         # 从而避免 WebhookService 生成临时 UUID 导致的数据冲突和层级丢失
         try:
-            await sync_service.sync_repo_structure(data.book.id)
+            await sync_service.sync_repo_structure(data.book.id, ensure_doc_id=data.id)
         except Exception as e:
             logger.error(f"Pre-sync structure failed for repo {data.book.id}: {e}")
 
