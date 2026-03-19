@@ -167,9 +167,9 @@ class WebhookService:
                 )
                 logger.info(f"Doc full-synced from API: {doc_data['title']} ({doc_data['yuque_id']})")
                 
-                # 触发向量化
+                # 触发向量化（失败不影响 MongoDB 已更新，见 SyncService 懒加载 RAG）
                 if doc_obj.body:
-                     await sync_service.rag_service.upsert_doc_to_vector_db(doc_obj)
+                    await sync_service._safe_rag_upsert_doc(doc_obj)
 
             else:
                  logger.warning(f"Failed to fetch doc detail for {data.slug}, falling back to webhook payload")

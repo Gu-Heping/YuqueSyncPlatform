@@ -46,7 +46,9 @@ app = FastAPI(
     lifespan=lifespan,
     docs_url="/api/docs",
     redoc_url="/api/redoc",
-    openapi_url="/api/openapi.json"
+    openapi_url="/api/openapi.json",
+    # 让 Swagger UI「Try it out」使用当前访问域名，避免请求发到错误地址
+    servers=[{"url": "/", "description": "当前站点（与文档页同源）"}],
 )
 
 # 注册路由

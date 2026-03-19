@@ -8,8 +8,34 @@ import math
 from app.models.schemas import User, Repo, Doc, Member, Activity
 from app.services.rag_service import RAGService
 from app.core.security import get_password_hash
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+_RAG_INIT_FAILED = object()  # 表示已尝试初始化 RAG 但失败
+
+
+def _get_rag_service_cached() -> Optional["RAGService"]:
+    """模块级单例：ENABLE_RAG=False 或初始化失败时不使用 RAG，不阻塞文档同步。"""
+    if not getattr(settings, "ENABLE_RAG", True):
+        return None
+    v = getattr(_get_rag_service_cached, "_instance", None)
+    if v is _RAG_INIT_FAILED:
+        return None
+    if v is not None:
+        return v  # 已成功初始化
+    try:
+        _get_rag_service_cached._instance = RAGService()  # type: ignore
+        return _get_rag_service_cached._instance
+    except Exception as e:
+        logger.warning(
+            "RAGService 初始化失败（如 Embedding API 余额不足），文档仍会写入 MongoDB，但向量检索不可用: %s",
+            e,
+        )
+        _get_rag_service_cached._instance = _RAG_INIT_FAILED  # type: ignore
+        return None
+
 
 class SyncService:
     """
@@ -19,8 +45,29 @@ class SyncService:
     def __init__(self):
         self.client = YuqueClient()
         # 限制并发请求数，防止触发语雀流控 (429 Too Many Requests)
-        self.semaphore = asyncio.Semaphore(5) 
-        self.rag_service = RAGService()
+        self.semaphore = asyncio.Semaphore(5)
+        # 不再在 __init__ 中创建 RAGService，避免 webhook 入口即因 Embedding API 失败而整段失败
+
+    def _get_rag_service(self) -> Optional[RAGService]:
+        return _get_rag_service_cached()
+
+    async def _safe_rag_delete_doc(self, yuque_id: int) -> None:
+        rag = self._get_rag_service()
+        if not rag:
+            return
+        try:
+            await rag.delete_doc(yuque_id)
+        except Exception as e:
+            logger.warning("向量库删除文档失败 (yuque_id=%s): %s", yuque_id, e)
+
+    async def _safe_rag_upsert_doc(self, doc: Doc) -> None:
+        rag = self._get_rag_service()
+        if not rag:
+            return
+        try:
+            await rag.upsert_doc_to_vector_db(doc)
+        except Exception as e:
+            logger.warning("向量库写入文档失败 (title=%s): %s", getattr(doc, "title", doc), e)
 
     async def _cleanup_repo(self, repo_id: int):
         """
@@ -34,7 +81,7 @@ class SyncService:
             # 2. 删除文档 (向量库 + MongoDB)
             for doc in docs_to_delete:
                 if doc.yuque_id:
-                    await self.rag_service.delete_doc(doc.yuque_id)
+                    await self._safe_rag_delete_doc(doc.yuque_id)
                 await doc.delete()
             
             # 3. 删除 Repo 记录
@@ -214,7 +261,7 @@ class SyncService:
                     for doc in docs_to_delete:
                         # 1. 从向量库删除
                         if doc.yuque_id:
-                            await self.rag_service.delete_doc(doc.yuque_id)
+                            await self._safe_rag_delete_doc(doc.yuque_id)
                         
                         # 2. 从 MongoDB 删除
                         await doc.delete()
@@ -226,7 +273,7 @@ class SyncService:
                     logger.info(f"知识库为空，清理所有文档: {len(docs_to_delete)} 个")
                     for doc in docs_to_delete:
                         if doc.yuque_id:
-                            await self.rag_service.delete_doc(doc.yuque_id)
+                            await self._safe_rag_delete_doc(doc.yuque_id)
                         await doc.delete()
 
             logger.info(f"  - 知识库 {repo.name} 同步完毕")
@@ -300,7 +347,7 @@ class SyncService:
                     for doc in docs_to_delete:
                         # 1. 从向量库删除
                         if doc.yuque_id:
-                            await self.rag_service.delete_doc(doc.yuque_id)
+                            await self._safe_rag_delete_doc(doc.yuque_id)
                         
                         # 2. 从 MongoDB 删除
                         await doc.delete()
@@ -312,7 +359,7 @@ class SyncService:
                     logger.info(f"知识库为空，清理所有文档: {len(docs_to_delete)} 个 (Repo ID: {repo_id})")
                     for doc in docs_to_delete:
                         if doc.yuque_id:
-                            await self.rag_service.delete_doc(doc.yuque_id)
+                            await self._safe_rag_delete_doc(doc.yuque_id)
                         await doc.delete()
 
             logger.info(f"知识库结构同步完成 (Repo ID: {repo_id})")
@@ -440,12 +487,7 @@ class SyncService:
                 
                 # 触发向量化 (仅当有正文内容时)
                 if doc_obj and doc_obj.body:
-                    try:
-                        # 异步触发，不阻塞主流程 (或者使用 BackgroundTasks，但这里在 Service 层直接调用)
-                        # 为了保证实时性，这里 await，但加上 try-except
-                        await self.rag_service.upsert_doc_to_vector_db(doc_obj)
-                    except Exception as e:
-                        logger.error(f"    - 向量化失败 (slug: {slug}): {e}")
+                    await self._safe_rag_upsert_doc(doc_obj)
 
                 # logger.debug(f"    - 已保存: {doc_data['title']} ({doc_type})")
 

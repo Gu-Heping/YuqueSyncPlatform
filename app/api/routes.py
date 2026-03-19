@@ -1,11 +1,15 @@
 # -*- coding: utf-8 -*-
+import re
+import logging
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Body
 from typing import List, Optional, Dict, Any
+from bs4 import BeautifulSoup
+
 from app.services.sync_service import SyncService
 from app.services.rag_service import RAGService
 from app.services.email_service import EmailService
 from app.models.schemas import Doc, Repo, Member, DocSummary, Activity
-import logging
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -132,15 +136,86 @@ async def search_docs(q: str = Query(..., min_length=1)):
     # 注意：需要在 Doc 模型中定义 text 索引
     return await Doc.find({"$text": {"$search": q}}).project(exclude=Doc.body).to_list()
 
+
+async def _keyword_search_docs(
+    query: str, limit: int = 20, repo_id: Optional[int] = None
+) -> List[Dict[str, Any]]:
+    """
+    RAG 不可用时的回退：基于 MongoDB 文本索引的关键词检索，返回与语义搜索相同结构。
+    """
+    def _strip_html(html: Optional[str]) -> str:
+        if not html:
+            return ""
+        try:
+            return BeautifulSoup(html, "html.parser").get_text(separator=" ").strip()
+        except Exception:
+            return html[:500] if html else ""
+
+    def _highlight(text: str, q: str, window: int = 120) -> str:
+        if not q or not text:
+            return (text or "")[: window + 50] + ("..." if len(text or "") > window + 50 else "")
+        keywords = [k.strip() for k in q.split() if k.strip()]
+        lower_text = (text or "").lower()
+        first_pos = -1
+        for k in keywords:
+            pos = lower_text.find(k.lower())
+            if pos != -1 and (first_pos == -1 or pos < first_pos):
+                first_pos = pos
+        start = max(0, first_pos - 30) if first_pos >= 0 else 0
+        end = min(len(text), start + window)
+        snippet = text[start:end]
+        if start > 0:
+            snippet = "..." + snippet
+        if end < len(text):
+            snippet = snippet + "..."
+        for k in keywords:
+            pattern = re.compile(re.escape(k), re.IGNORECASE)
+            snippet = pattern.sub(lambda m: f"<mark>{m.group(0)}</mark>", snippet)
+        return snippet
+
+    find_query = {"$text": {"$search": query}}
+    if repo_id is not None:
+        find_query["repo_id"] = repo_id
+    try:
+        docs = await Doc.find(find_query).limit(limit * 2).to_list()
+    except Exception as e:
+        logger.warning("关键词检索失败 (可能未建文本索引): %s", e)
+        return []
+    results = []
+    for doc in docs[:limit]:
+        text_content = doc.description or _strip_html(doc.body) or ""
+        content = _highlight(text_content, query) if text_content else "暂无预览"
+        author_name = "未知作者"
+        if doc.user_id:
+            member = await Member.find_one(Member.yuque_id == doc.user_id)
+            if member:
+                author_name = member.name or member.login or author_name
+        results.append({
+            "title": doc.title,
+            "slug": doc.slug,
+            "repo_id": doc.repo_id,
+            "content": content,
+            "updated_date": doc.updated_at.strftime("%Y-%m-%d") if doc.updated_at else "",
+            "author_name": author_name,
+            "source_type": "keyword",
+        })
+    return results
+
+
 # --- AI / RAG Endpoints ---
 
 @router.post("/search", summary="语义搜索")
 async def search_docs_semantic(query: str = Body(..., embed=True), limit: int = 20, repo_id: Optional[int] = None):
     """
-    基于向量的语义搜索
+    语义搜索；RAG 不可用时自动回退为关键词检索。
     """
-    rag = RAGService()
-    return await rag.search(query, limit=limit, repo_id=repo_id)
+    if settings.ENABLE_RAG:
+        try:
+            rag = RAGService()
+            return await rag.search(query, limit=limit, repo_id=repo_id)
+        except Exception as e:
+            logger.warning("语义搜索回退为关键词检索: %s", e)
+    return await _keyword_search_docs(query, limit=limit, repo_id=repo_id)
 
 @router.post("/chat/rag", summary="RAG 智能问答")
 async def chat_rag(
@@ -151,6 +226,8 @@ async def chat_rag(
     """
     基于知识库的智能问答 (支持多轮对话)
     """
+    if not settings.ENABLE_RAG:
+        raise HTTPException(status_code=503, detail="RAG 功能已关闭 (ENABLE_RAG=false)")
     rag = RAGService()
     return await rag.chat(query, repo_id=repo_id, session_id=session_id)
 
@@ -159,6 +236,8 @@ async def ai_explain(text: str = Body(..., embed=True)):
     """
     解释选中的文本或代码
     """
+    if not settings.ENABLE_RAG:
+        raise HTTPException(status_code=503, detail="RAG 功能已关闭 (ENABLE_RAG=false)")
     rag = RAGService()
     return await rag.explain(text)
 

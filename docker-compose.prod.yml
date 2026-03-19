@@ -6,7 +6,7 @@ services:
       context: .
       dockerfile: frontend/Dockerfile
     ports:
-      - "${HOST_PORT:-80}:80"
+      - "${HOST_PORT:-82}:80"
     depends_on:
       - backend
     networks:
@@ -35,7 +35,8 @@ services:
     networks:
       - yuque-network
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
+      # 使用 Python 检测（slim 镜像无 curl）
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\" || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -45,7 +46,7 @@ services:
     image: louislam/uptime-kuma:1
     restart: always
     ports:
-      - "3001:3001"
+      - "3003:3001"
     volumes:
       - ./kuma-data:/app/data
     networks:

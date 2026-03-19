@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     MONGO_DB_NAME: str = "yuque_sync_db"
 
     # AI / RAG 配置
+    ENABLE_RAG: bool = True  # 设为 False 可关闭 RAG（不调用 Embedding/向量库，搜索与 AI 对话不可用，文档同步照常）
     OPENAI_API_KEY: str = ""
     OPENAI_BASE_URL: str = "https://api.chatanywhere.tech/v1" # 支持兼容接口
     QDRANT_URL: str = "http://localhost:6333"
